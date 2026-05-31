@@ -1,0 +1,555 @@
+# reviews/nlp.py
+"""
+NLP engine for the Review Sentiment & NLP Analysis challenge.
+
+Components:
+  LanguageDetector   — detects en / sw / other using lightweight heuristics
+                       + langdetect fallback
+  SentimentScorer    — hybrid: AfriSenti-aware rules for Swahili,
+                       LLM scoring for English, heuristic fallback
+  TopicExtractor     — LLM-based topic + key phrase extraction,
+                       with TF-IDF keyword fallback
+  AspectAnalyser     — scores 8 hospitality aspects per review
+  ReviewNLPPipeline  — orchestrates all of the above for one Review
+
+All components are stateless and thread-safe.
+All external calls (LLM) are wrapped in try/except and have fallbacks
+so the pipeline never crashes on a single review.
+"""
+from __future__ import annotations
+import logging
+import re
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+# ── Hospitality aspects we care about ─────────────────────────────────────
+ASPECTS = [
+    "cleanliness",
+    "staff",
+    "location",
+    "value",
+    "amenities",
+    "wifi",
+    "food",
+    "noise",
+]
+
+# ── Swahili sentiment lexicon (AfriSenti-informed) ────────────────────────
+# Positive and negative Swahili/Sheng words relevant to hospitality
+SWAHILI_POSITIVE = {
+    "nzuri", "vizuri", "bora", "safi", "salama", "furaha", "penda",
+    "starehe", "karibu", "asante", "tukufu", "faida", "bure", "rahisi",
+    "upole", "msaada", "haraka", "mpya", "sawa", "laini", "starish",
+    "kamili", "poa", "freshi", "nice", "good", "great", "excellent",
+    "wonderful", "amazing", "perfect", "clean", "friendly", "helpful",
+}
+
+SWAHILI_NEGATIVE = {
+    "mbaya", "chafu", "tatizo", "shida", "hasira", "vibaya", "polepole",
+    "kelele", "uchafu", "dharau", "bei", "ghali", "pungufu", "kasoro",
+    "kero", "ugumu", "dirty", "bad", "poor", "noisy", "slow", "expensive",
+    "broken", "rude", "awful", "terrible", "horrible", "worst", "filthy",
+}
+
+# English sentiment word lists for heuristic fallback
+ENGLISH_POSITIVE = {
+    "excellent", "amazing", "wonderful", "fantastic", "perfect", "great",
+    "good", "clean", "friendly", "helpful", "comfortable", "lovely",
+    "beautiful", "nice", "pleasant", "enjoyed", "recommended", "love",
+    "best", "outstanding", "superb", "immaculate", "spotless", "cozy",
+    "welcoming", "attentive", "efficient", "quiet", "convenient",
+}
+
+ENGLISH_NEGATIVE = {
+    "dirty", "rude", "noisy", "terrible", "awful", "horrible", "bad",
+    "poor", "disappointing", "uncomfortable", "broken", "slow", "cold",
+    "smelly", "unfriendly", "expensive", "overpriced", "small", "dark",
+    "worn", "outdated", "unclean", "unhelpful", "ignored", "waiting",
+    "mold", "cockroach", "bug", "leak", "stain", "smell",
+}
+
+# Aspect keyword map
+ASPECT_KEYWORDS: dict[str, set[str]] = {
+    "cleanliness": {"clean", "dirty", "spotless", "filthy", "immaculate", "safi", "chafu", "mold", "stain", "hygiene"},
+    "staff":       {"staff", "service", "friendly", "rude", "helpful", "attentive", "reception", "wafanyakazi", "huduma"},
+    "location":    {"location", "central", "far", "close", "walking", "access", "eneo", "mahali", "transport"},
+    "value":       {"value", "price", "expensive", "cheap", "worth", "overpriced", "bei", "gharama", "affordable"},
+    "amenities":   {"pool", "gym", "spa", "parking", "elevator", "facility", "vifaa", "amenity", "air conditioning"},
+    "wifi":        {"wifi", "internet", "connection", "slow", "fast", "signal", "intaneti", "mtandao"},
+    "food":        {"food", "breakfast", "restaurant", "meal", "taste", "chakula", "asubuhi", "dinner", "menu"},
+    "noise":       {"noise", "quiet", "loud", "party", "street", "kelele", "utulivu", "disturb", "hear"},
+}
+
+
+# ── Language Detector ──────────────────────────────────────────────────────
+class LanguageDetector:
+    """
+    Lightweight language detection.
+    Uses word-overlap heuristics first (fast, no dependencies),
+    falls back to langdetect if installed.
+    """
+
+    # High-frequency Swahili function words
+    SWAHILI_MARKERS = {
+        "na", "ya", "wa", "ni", "kwa", "la", "za", "ku", "si",
+        "hii", "hiyo", "hilo", "katika", "kwamba", "lakini",
+        "pia", "sana", "kabla", "baada", "kuwa", "alikuwa",
+        "watu", "siku", "muda", "ndani", "nje",
+    }
+
+    def detect(self, text: str) -> str:
+        """Returns 'sw', 'en', or 'other'."""
+        if not text or len(text.strip()) < 5:
+            return "en"
+
+        words = set(re.findall(r"\b\w+\b", text.lower()))
+
+        # Count Swahili marker overlap
+        sw_hits = len(words & self.SWAHILI_MARKERS)
+        if sw_hits >= 3 or (len(words) > 0 and sw_hits / len(words) > 0.15):
+            return "sw"
+
+        # Try langdetect if installed
+        try:
+            from langdetect import detect as ld_detect
+            lang = ld_detect(text)
+            if lang == "sw":
+                return "sw"
+            if lang.startswith("en"):
+                return "en"
+            return "other"
+        except Exception:
+            pass
+
+        return "en"
+
+
+language_detector = LanguageDetector()
+
+
+# ── Sentiment Scorer ───────────────────────────────────────────────────────
+
+class SentimentScorer:
+    """
+    Hybrid sentiment scorer:
+      1. AfriSenti-aware lexicon for Swahili reviews (fast, offline)
+      2. LLM scoring for English (accurate, async)
+      3. Heuristic English lexicon as fallback
+
+    Returns (label, score, model_name):
+      label: "positive" | "negative" | "neutral"
+      score: 0.0–1.0 confidence
+      model_name: which method was used
+    """
+
+    def score(
+        self,
+        text: str,
+        language: str = "en",
+        reviewer_score: Optional[float] = None,
+    ) -> tuple[str, float, str]:
+        """
+        Primary entry point.
+        reviewer_score (1–10) is used as a strong signal when available.
+        """
+        if not text or not text.strip():
+            return self._from_reviewer_score(reviewer_score)
+
+        # Swahili: use lexicon (AfriSenti-informed)
+        if language == "sw":
+            return self._swahili_lexicon(text, reviewer_score)
+
+        # English: try LLM first, fall back to heuristic
+        llm_result = self._llm_score(text, language)
+        if llm_result:
+            label, score = llm_result
+            # Blend with reviewer_score if available
+            if reviewer_score is not None:
+                rs_label, rs_score = self._reviewer_score_signal(reviewer_score)
+                if rs_label == label:
+                    score = min(1.0, score * 1.1)
+            return label, score, "llm"
+
+        return self._heuristic_english(text, reviewer_score)
+
+    def _from_reviewer_score(self, rs: Optional[float]) -> tuple[str, float, str]:
+        if rs is None:
+            return "neutral", 0.5, "default"
+        if rs >= 8.0:
+            return "positive", 0.75, "reviewer_score"
+        if rs <= 4.0:
+            return "negative", 0.75, "reviewer_score"
+        return "neutral", 0.5, "reviewer_score"
+
+    def _reviewer_score_signal(self, rs: float) -> tuple[str, float]:
+        if rs >= 8.0:
+            return "positive", min(1.0, (rs - 7) / 3)
+        if rs <= 4.0:
+            return "negative", min(1.0, (5 - rs) / 4)
+        return "neutral", 0.5
+
+    def _swahili_lexicon(
+        self, text: str, reviewer_score: Optional[float]
+    ) -> tuple[str, float, str]:
+        """
+        AfriSenti-informed Swahili sentiment.
+        Uses combined Swahili + common English words since East African
+        reviews are often code-switched.
+        """
+        words = set(re.findall(r"\b\w+\b", text.lower()))
+        pos = len(words & SWAHILI_POSITIVE)
+        neg = len(words & SWAHILI_NEGATIVE)
+        total = pos + neg
+
+        if total == 0:
+            return self._from_reviewer_score(reviewer_score)
+
+        ratio = pos / total
+        if ratio >= 0.65:
+            label, score = "positive", min(0.95, 0.55 + ratio * 0.4)
+        elif ratio <= 0.35:
+            label, score = "negative", min(0.95, 0.55 + (1 - ratio) * 0.4)
+        else:
+            label, score = "neutral", 0.5
+
+        # Reviewer score override for strong signals
+        if reviewer_score is not None:
+            if reviewer_score >= 9.0 and label != "negative":
+                label, score = "positive", max(score, 0.80)
+            elif reviewer_score <= 3.0 and label != "positive":
+                label, score = "negative", max(score, 0.80)
+
+        return label, round(score, 4), "afrisenti_lexicon"
+
+    def _llm_score(
+        self, text: str, language: str
+    ) -> Optional[tuple[str, float]]:
+        """Call LLM for sentiment. Returns (label, score) or None."""
+        try:
+            import json
+            from ai.services import ai_service_provider
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            system_user = User.objects.filter(is_superuser=True).first()
+            if not system_user:
+                return None
+
+            prompt = f"""Analyse the sentiment of this hospitality review.
+Language hint: {language}
+Review: \"\"\"{text[:800]}\"\"\"
+
+Return JSON only — no markdown, no explanation:
+{{"label": "positive|negative|neutral", "score": 0.0-1.0, "confidence": "high|medium|low"}}"""
+
+            response = ai_service_provider.chat_completion_sync(
+                user=system_user,
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.3-70b-versatile",
+                temperature=0.0,
+                max_tokens=80,
+                response_format={"type": "json_object"},
+                timeout=8,
+            )
+            if response and response.get("content"):
+                data = json.loads(response["content"])
+                label = data.get("label", "neutral")
+                score = float(data.get("score", 0.5))
+                if label not in ("positive", "negative", "neutral"):
+                    label = "neutral"
+                return label, round(score, 4)
+        except Exception as e:
+            logger.debug(f"LLM sentiment failed: {e}")
+        return None
+
+    def _heuristic_english(
+        self, text: str, reviewer_score: Optional[float]
+    ) -> tuple[str, float, str]:
+        words = set(re.findall(r"\b\w+\b", text.lower()))
+        pos = len(words & ENGLISH_POSITIVE)
+        neg = len(words & ENGLISH_NEGATIVE)
+        total = pos + neg
+
+        if total == 0:
+            return self._from_reviewer_score(reviewer_score)
+
+        ratio = pos / total
+        if ratio >= 0.60:
+            label, score = "positive", min(0.90, 0.50 + ratio * 0.40)
+        elif ratio <= 0.40:
+            label, score = "negative", min(0.90, 0.50 + (1 - ratio) * 0.40)
+        else:
+            label, score = "neutral", 0.50
+
+        if reviewer_score is not None:
+            rs_label, _ = self._reviewer_score_signal(reviewer_score)
+            if rs_label == label:
+                score = min(0.95, score * 1.1)
+
+        return label, round(score, 4), "heuristic"
+
+
+sentiment_scorer = SentimentScorer()
+
+
+# ── Topic Extractor ────────────────────────────────────────────────────────
+
+class TopicExtractor:
+    """
+    Extracts topics and key phrases from a review.
+
+    Strategy:
+      1. LLM: returns structured JSON with topic labels + key phrases.
+         Best quality, used when LLM is available.
+      2. Keyword fallback: matches text against ASPECT_KEYWORDS.
+         Always works, always fast.
+    """
+
+    # Canonical topic labels — LLM is prompted to use these
+    CANONICAL_TOPICS = [
+        "Cleanliness & Hygiene",
+        "Staff & Service",
+        "Location & Accessibility",
+        "Value for Money",
+        "Amenities & Facilities",
+        "WiFi & Connectivity",
+        "Food & Breakfast",
+        "Noise & Comfort",
+        "Room Quality",
+        "Check-in & Check-out",
+        "Safety & Security",
+        "Local Experience",       # East African context
+        "Cultural Hospitality",   # East African context — warmth, Ubuntu
+    ]
+
+    def extract(self, text: str, language: str = "en") -> dict:
+        """
+        Returns:
+        {
+            "topics": ["Cleanliness & Hygiene", "Staff & Service"],
+            "key_phrases": ["very clean rooms", "friendly staff"],
+            "aspect_scores": {"cleanliness": 0.9, "staff": 0.8, ...}
+        }
+        """
+        result = {
+            "topics":        [],
+            "key_phrases":   [],
+            "aspect_scores": {},
+        }
+
+        if not text or not text.strip():
+            return result
+
+        # Try LLM
+        llm_result = self._llm_extract(text, language)
+        if llm_result:
+            result.update(llm_result)
+        else:
+            # Keyword fallback for topics
+            result["topics"] = self._keyword_topics(text)
+
+        # Always run aspect scoring (fast, no LLM needed)
+        result["aspect_scores"] = self._aspect_scores(text)
+
+        return result
+
+    def _llm_extract(self, text: str, language: str) -> Optional[dict]:
+        try:
+            import json
+            from ai.services import ai_service_provider
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            system_user = User.objects.filter(is_superuser=True).first()
+            if not system_user:
+                return None
+
+            topics_str = "\n".join(f"- {t}" for t in self.CANONICAL_TOPICS)
+            prompt = f"""Extract topics and key phrases from this hospitality review.
+Language: {language}
+Review: \"\"\"{text[:800]}\"\"\"
+
+Available topics:
+{topics_str}
+
+Return JSON only:
+{{
+  "topics": ["topic1", "topic2"],
+  "key_phrases": ["phrase1", "phrase2", "phrase3"]
+}}
+Only use topics from the list. Include 2-5 key phrases (exact short quotes from the review)."""
+
+            response = ai_service_provider.chat_completion_sync(
+                user=system_user,
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.3-70b-versatile",
+                temperature=0.1,
+                max_tokens=200,
+                response_format={"type": "json_object"},
+                timeout=10,
+            )
+            if response and response.get("content"):
+                data = json.loads(response["content"])
+                topics = [
+                    t for t in data.get("topics", [])
+                    if t in self.CANONICAL_TOPICS
+                ]
+                phrases = data.get("key_phrases", [])[:8]
+                return {"topics": topics, "key_phrases": phrases}
+        except Exception as e:
+            logger.debug(f"LLM topic extraction failed: {e}")
+        return None
+
+    def _keyword_topics(self, text: str) -> list[str]:
+        """Map text to canonical topics via aspect keywords."""
+        text_lower = text.lower()
+        words = set(re.findall(r"\b\w+\b", text_lower))
+        topic_map = {
+            "cleanliness": "Cleanliness & Hygiene",
+            "staff":       "Staff & Service",
+            "location":    "Location & Accessibility",
+            "value":       "Value for Money",
+            "amenities":   "Amenities & Facilities",
+            "wifi":        "WiFi & Connectivity",
+            "food":        "Food & Breakfast",
+            "noise":       "Noise & Comfort",
+        }
+        found = []
+        for aspect, topic in topic_map.items():
+            if words & ASPECT_KEYWORDS.get(aspect, set()):
+                found.append(topic)
+        return found
+
+    def _aspect_scores(self, text: str) -> dict[str, float]:
+        """
+        Score each aspect 0.0–1.0 based on sentiment-weighted keyword presence.
+        Positive keywords near the aspect → score > 0.5
+        Negative keywords near the aspect → score < 0.5
+        Aspect not mentioned → not included in output
+        """
+        text_lower = text.lower()
+        words = set(re.findall(r"\b\w+\b", text_lower))
+        scores = {}
+
+        pos_words = SWAHILI_POSITIVE | ENGLISH_POSITIVE
+        neg_words = SWAHILI_NEGATIVE | ENGLISH_NEGATIVE
+
+        for aspect, keywords in ASPECT_KEYWORDS.items():
+            if not (words & keywords):
+                continue
+
+            # Look in a 60-char window around the keyword
+            aspect_score = 0.5
+            mention_count = 0
+            for kw in keywords:
+                for match in re.finditer(r"\b" + re.escape(kw) + r"\b", text_lower):
+                    start = max(0, match.start() - 60)
+                    end   = min(len(text_lower), match.end() + 60)
+                    window = text_lower[start:end]
+                    window_words = set(re.findall(r"\b\w+\b", window))
+                    pos_hits = len(window_words & pos_words)
+                    neg_hits = len(window_words & neg_words)
+                    if pos_hits + neg_hits > 0:
+                        aspect_score += (pos_hits - neg_hits) / (pos_hits + neg_hits) * 0.4
+                        mention_count += 1
+
+            if mention_count > 0:
+                scores[aspect] = round(max(0.0, min(1.0, aspect_score / mention_count)), 3)
+
+        return scores
+
+
+topic_extractor = TopicExtractor()
+
+
+# ── Full pipeline ──────────────────────────────────────────────────────────
+
+class ReviewNLPPipeline:
+    """
+    Orchestrates LanguageDetector → SentimentScorer → TopicExtractor
+    for a single Review instance.
+
+    Usage:
+        from reviews.nlp import review_pipeline
+        review_pipeline.process(review_instance)  # saves in-place
+    """
+
+    def process(self, review) -> bool:
+        """
+        Run the full NLP pipeline on a Review instance.
+        Updates the instance fields and calls save().
+        Returns True on success, False on failure.
+        """
+        try:
+            text = review.display_text
+            if not text:
+                review.is_processed = True
+                review.processing_error = "empty text"
+                review.save(update_fields=[
+                    "is_processed", "processing_error", "updated_at"
+                ])
+                return False
+
+            # 1. Language detection
+            language = language_detector.detect(text)
+            review.language = language
+
+            # 2. Sentiment scoring
+            label, score, model_name = sentiment_scorer.score(
+                text,
+                language=language,
+                reviewer_score=review.reviewer_score,
+            )
+            review.sentiment       = label
+            review.sentiment_score = score
+            review.sentiment_model = model_name
+
+            # 3. Topic + aspect extraction
+            extraction = topic_extractor.extract(text, language=language)
+            review.topic_labels  = extraction["topics"]
+            review.key_phrases   = extraction["key_phrases"]
+            review.aspect_scores = extraction["aspect_scores"]
+
+            # 4. Mark processed
+            review.is_processed     = True
+            review.processing_error = ""
+
+            review.save(update_fields=[
+                "language", "sentiment", "sentiment_score", "sentiment_model",
+                "topic_labels", "key_phrases", "aspect_scores",
+                "is_processed", "processing_error", "updated_at",
+            ])
+            return True
+
+        except Exception as e:
+            logger.error(f"ReviewNLPPipeline.process failed for {review.pk}: {e}")
+            try:
+                review.processing_error = str(e)[:500]
+                review.is_processed = False
+                review.save(update_fields=["processing_error", "updated_at"])
+            except Exception:
+                pass
+            return False
+
+    def process_batch(self, queryset, limit: int = 500) -> dict:
+        """
+        Process a batch of unprocessed reviews.
+        Returns {"processed": N, "succeeded": N, "failed": N}
+        """
+        succeeded = failed = 0
+        reviews = queryset.filter(is_processed=False)[:limit]
+        for review in reviews:
+            ok = self.process(review)
+            if ok:
+                succeeded += 1
+            else:
+                failed += 1
+        return {
+            "processed":  succeeded + failed,
+            "succeeded":  succeeded,
+            "failed":     failed,
+        }
+
+
+review_pipeline = ReviewNLPPipeline()
+
