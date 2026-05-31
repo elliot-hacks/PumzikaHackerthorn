@@ -470,7 +470,7 @@ class ReviewNLPPipeline:
     for a single Review instance.
 
     Usage:
-        from reviews.nlp import review_pipeline
+        from home.nlp import review_pipeline
         review_pipeline.process(review_instance)  # saves in-place
     """
 
