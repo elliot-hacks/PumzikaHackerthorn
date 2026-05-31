@@ -1,9 +1,157 @@
 {% extends "admin/base_site.html" %}
 {% load i18n %}
+{% load static %}
 
 {% block title %}Review Sentiment Dashboard{% endblock %}
 
+{% block extrahead %}
+{{ block.super }}
+<!-- Command Palette Styles -->
+<style>
+  /* Command Palette Button */
+  .cmd-palette-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1565c0 0%, #4a148c 100%);
+    color: #fff;
+    border: none;
+    box-shadow: 0 4px 20px rgba(21, 101, 192, 0.4);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    z-index: 99998;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .cmd-palette-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 30px rgba(21, 101, 192, 0.6);
+  }
+  .cmd-palette-btn:active {
+    transform: scale(0.95);
+  }
+  
+  /* Status Bar */
+  .nlp-status-bar {
+    background: linear-gradient(90deg, #1565c0 0%, #4a148c 100%);
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+  }
+  .nlp-status-bar .status-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .nlp-status-bar .status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .nlp-status-bar .status-badge {
+    background: rgba(255,255,255,0.2);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .nlp-status-bar .status-right {
+    font-size: 11px;
+    opacity: 0.8;
+  }
+  
+  /* Quick Actions Bar */
+  .quick-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .quick-action-btn {
+    background: var(--color-background-paper, #fff);
+    border: 1px solid var(--color-border-primary, #e0e0e0);
+    border-radius: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+  }
+  .quick-action-btn:hover {
+    background: var(--color-hover, #f5f5f5);
+    border-color: #1565c0;
+    transform: translateY(-1px);
+  }
+  .quick-action-btn.primary {
+    background: #1565c0;
+    color: #fff;
+    border-color: #1565c0;
+  }
+  .quick-action-btn.primary:hover {
+    background: #0d47a1;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
+<!-- NLP Status Bar -->
+<div class="nlp-status-bar">
+  <div class="status-left">
+    <div class="status-item">
+      <span>📊</span>
+      <span>Processed:</span>
+      <span class="status-badge">{{ processed|default:0 }}/{{ total_reviews|default:0 }}</span>
+    </div>
+    <div class="status-item">
+      <span>🌍</span>
+      <span>Swahili:</span>
+      <span class="status-badge">{{ lang_counts.sw|default:0 }}</span>
+    </div>
+    <div class="status-item">
+      <span>🏷️</span>
+      <span>Topics:</span>
+      <span class="status-badge">{{ top_topics|length|default:0 }}</span>
+    </div>
+    <div class="status-item">
+      <span>💡</span>
+      <span>Insights:</span>
+      <span class="status-badge">{{ command_stats.property_insights|default:0 }}</span>
+    </div>
+  </div>
+  <div class="status-right">
+    Press <kbd style="background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:4px;">Ctrl+K</kbd> for commands
+  </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="quick-actions">
+  <button class="quick-action-btn primary" onclick="executeNLPCommand('analyze_sentiment')">
+    <span>🤖</span> Analyze Sentiment
+  </button>
+  <button class="quick-action-btn" onclick="executeNLPCommand('extract_topics')">
+    <span>🏷️</span> Extract Topics
+  </button>
+  <button class="quick-action-btn" onclick="executeNLPCommand('generate_insights')">
+    <span>💡</span> Generate Insights
+  </button>
+  <button class="quick-action-btn" onclick="executeNLPCommand('update_clusters')">
+    <span>🔄</span> Update Clusters
+  </button>
+  <button class="quick-action-btn" onclick="refreshStatus()">
+    <span>🔄</span> Refresh
+  </button>
+</div>
 <style>
   .dash-grid   { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-bottom:24px }
   .kpi-card    { background:var(--color-background-paper,#fff); border:1px solid var(--color-border-primary,#e0e0e0); border-radius:12px; padding:20px }
@@ -84,6 +232,88 @@
   <div class="chart-title">Properties with Most Negative home</div>
   <canvas id="problemProps" height="120"></canvas>
 </div>
+
+<!-- Command Palette JS -->
+<script src="{% static 'home/js/command-palette.js' %}"></script>
+
+<!-- NLP Dashboard Helper Functions -->
+<script>
+// Execute NLP command via API
+function executeNLPCommand(command, params = {}) {
+  showNLPNotification('⚡ Executing command...', 'info');
+  
+  fetch('/home/api/command-palette/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': getCookie('csrftoken'),
+    },
+    body: JSON.stringify({ command, params }),
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      showNLPNotification(`✅ ${data.message}`, 'success');
+      if (data.task_id) {
+        showNLPNotification(`📋 Task ID: ${data.task_id}`, 'info');
+      }
+      setTimeout(() => refreshStatus(), 1000);
+    } else {
+      showNLPNotification(`❌ Error: ${data.error}`, 'error');
+    }
+  })
+  .catch(error => {
+    showNLPNotification(`❌ Network error: ${error.message}`, 'error');
+  });
+}
+
+// Refresh dashboard status
+function refreshStatus() {
+  location.reload();
+}
+
+// Show notification toast
+function showNLPNotification(message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 12px 20px;
+    background: ${type === 'success' ? '#2e7d32' : type === 'error' ? '#c62828' : '#1565c0'};
+    color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 100001;
+    font-size: 14px;
+    max-width: 400px;
+    animation: slideIn 0.3s ease;
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.animation = 'slideOut 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// Get CSRF token
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+</script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>

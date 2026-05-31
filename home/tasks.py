@@ -402,6 +402,51 @@ Return JSON only:
     return {}
 
 
+@shared_task(name="home.tasks.extract_topics_task")
+def extract_topics_task(update_clusters: bool = True) -> dict:
+    """
+    Extract topics from reviews that have sentiment but no topics.
+    Optionally updates topic clusters after extraction.
+    """
+    from home.models import Review
+    from home.nlp import topic_extractor
+    from collections import Counter
+
+    # Get reviews without topics
+    reviews = Review.objects.filter(
+        is_processed=True,
+        topic_labels=[],
+    )[:200]  # Limit per task run
+
+    extracted = 0
+    topic_counter = Counter()
+
+    for review in reviews:
+        text = review.display_text
+        if not text:
+            continue
+
+        try:
+            extraction = topic_extractor.extract(text, language=review.language)
+            if extraction["topics"]:
+                review.topic_labels = extraction["topics"]
+                review.key_phrases = extraction["key_phrases"]
+                review.save(update_fields=["topic_labels", "key_phrases"])
+                extracted += 1
+                topic_counter.update(extraction["topics"])
+        except Exception as e:
+            logger.warning(f"Topic extraction failed for review {review.pk}: {e}")
+
+    result = {"extracted": extracted}
+
+    # Update clusters if requested
+    if update_clusters and topic_counter:
+        clusters_result = update_topic_clusters()
+        result["clusters"] = clusters_result
+
+    return result
+
+
 @shared_task(name="home.tasks.ingest_kaggle_dataset")
 def ingest_kaggle_dataset(
     csv_path: str,

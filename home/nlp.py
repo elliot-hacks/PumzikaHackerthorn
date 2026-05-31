@@ -553,3 +553,187 @@ class ReviewNLPPipeline:
 
 review_pipeline = ReviewNLPPipeline()
 
+
+# ── NLP Query Engine for Chat ──────────────────────────────────────────────
+
+class NLPQueryEngine:
+    """
+    Natural language query engine for the command palette chat.
+    Translates user questions into database queries and uses LLM for responses.
+    """
+
+    def __init__(self):
+        from home.llm_service import LLMService
+        self.llm = LLMService()
+
+    def process_query(self, query: str, history: list = None) -> dict:
+        """
+        Process a natural language query about hotel reviews.
+        Returns {"response": str, "data": dict}
+        """
+        query_lower = query.lower().strip()
+
+        # Detect query intent and execute appropriate database query
+        if any(word in query_lower for word in ["best", "top rated", "highest score", "top hotels"]):
+            return self._get_best_hotels(query_lower)
+        elif any(word in query_lower for word in ["worst", "lowest score", "bad hotels"]):
+            return self._get_worst_hotels(query_lower)
+        elif "cleanliness" in query_lower:
+            return self._get_hotels_by_aspect("cleanliness", query_lower)
+        elif "staff" in query_lower or "service" in query_lower:
+            return self._get_hotels_by_aspect("staff", query_lower)
+        elif "location" in query_lower:
+            return self._get_hotels_by_aspect("location", query_lower)
+        elif "value" in query_lower or "money" in query_lower:
+            return self._get_hotels_by_aspect("value", query_lower)
+        elif "wifi" in query_lower or "internet" in query_lower:
+            return self._get_hotels_by_aspect("wifi", query_lower)
+        elif "noise" in query_lower or "quiet" in query_lower:
+            return self._get_hotels_by_aspect("noise", query_lower)
+        elif "complain" in query_lower or "negative" in query_lower:
+            return self._get_common_complaints(query_lower)
+        elif "amsterdam" in query_lower:
+            return self._get_hotels_in_city("Amsterdam", query_lower)
+        else:
+            return self._general_query(query)
+
+    def _get_best_hotels(self, query: str) -> dict:
+        """Get hotels with highest reviewer scores."""
+        from home.models import Review
+        from django.db.models import Avg, Count
+
+        hotels = (
+            Review.objects
+            .values("property_name", "property_id")
+            .annotate(
+                avg_score=Avg("reviewer_score"),
+                review_count=Count("id")
+            )
+            .filter(review_count__gte=10)  # Minimum reviews for statistical significance
+            .order_by("-avg_score")[:10]
+        )
+
+        hotels_list = [
+            {"name": h["property_name"], "avg_score": float(h["avg_score"] or 0), "count": h["review_count"]}
+            for h in hotels
+        ]
+
+        response = self.llm.generate_text(
+            f"Based on these top hotels by reviewer score, provide a helpful summary: {hotels_list}"
+        )
+
+        return {"response": response, "data": {"hotels": hotels_list}}
+
+    def _get_worst_hotels(self, query: str) -> dict:
+        """Get hotels with lowest reviewer scores."""
+        from home.models import Review
+        from django.db.models import Avg, Count
+
+        hotels = (
+            Review.objects
+            .values("property_name", "property_id")
+            .annotate(
+                avg_score=Avg("reviewer_score"),
+                review_count=Count("id")
+            )
+            .filter(review_count__gte=10)
+            .order_by("avg_score")[:10]
+        )
+
+        hotels_list = [
+            {"name": h["property_name"], "avg_score": float(h["avg_score"] or 0), "count": h["review_count"]}
+            for h in hotels
+        ]
+
+        response = self.llm.generate_text(
+            f"Based on these lowest-rated hotels, provide a helpful summary: {hotels_list}"
+        )
+
+        return {"response": response, "data": {"hotels": hotels_list}}
+
+    def _get_hotels_by_aspect(self, aspect: str, query: str) -> dict:
+        """Get hotels rated highly on a specific aspect."""
+        from home.models import Review
+        from django.db.models import Avg, Count
+        from django.db.models.functions import JSONObject
+
+        # Query for hotels with good aspect scores
+        hotels = (
+            Review.objects
+            .filter(is_processed=True, aspect_scores__has_key=aspect)
+            .values("property_name", "property_id")
+            .annotate(
+                aspect_avg=Avg("aspect_scores"),
+                review_count=Count("id")
+            )
+            .filter(review_count__gte=5)
+            .order_by("-aspect_avg")[:10]
+        )
+
+        hotels_list = [
+            {"name": h["property_name"], "aspect_score": float(h["aspect_avg"] or 0), "count": h["review_count"]}
+            for h in hotels
+        ]
+
+        response = f"Here are the top hotels for {aspect} based on review analysis:"
+        return {"response": response, "data": {"hotels": hotels_list}}
+
+    def _get_common_complaints(self, query: str) -> dict:
+        """Get most common complaint topics from negative reviews."""
+        from home.models import Review, TopicCluster
+        from django.db.models import Count
+
+        # Get top negative topics
+        topics = list(
+            TopicCluster.objects
+            .filter(avg_sentiment_score__lt=0.5)
+            .order_by("avg_sentiment_score")[:10]
+            .values("label", "review_count", "avg_sentiment_score")
+        )
+
+        response = "Based on review analysis, the most common complaints are:"
+        return {"response": response, "data": {"topics": topics}}
+
+    def _get_hotels_in_city(self, city: str, query: str) -> dict:
+        """Get hotels in a specific city."""
+        from home.models import Review
+        from django.db.models import Avg, Count
+
+        hotels = (
+            Review.objects
+            .filter(property_name__icontains=city)
+            .values("property_name", "property_id")
+            .annotate(
+                avg_score=Avg("reviewer_score"),
+                review_count=Count("id")
+            )
+            .order_by("-avg_score")[:10]
+        )
+
+        hotels_list = [
+            {"name": h["property_name"], "avg_score": float(h["avg_score"] or 0), "count": h["review_count"]}
+            for h in hotels
+        ]
+
+        response = f"Here are the top-rated hotels in {city}:"
+        return {"response": response, "data": {"hotels": hotels_list}}
+
+    def _general_query(self, query: str) -> dict:
+        """Handle general queries using LLM with database context."""
+        from home.models import Review
+        from django.db.models import Count, Avg
+
+        # Get some general stats to provide context
+        stats = {
+            "total_reviews": Review.objects.count(),
+            "total_hotels": Review.objects.values("property_name").distinct().count(),
+            "avg_score": float(Review.objects.filter(reviewer_score__isnull=False).aggregate(Avg("reviewer_score"))["reviewer_score__avg"] or 0),
+        }
+
+        response = self.llm.generate_text(
+            f"Answer this question about our hotel review database: '{query}'. "
+            f"Here are some stats: {stats}. Provide a helpful response."
+        )
+
+        return {"response": response, "data": {"stats": stats}}
+

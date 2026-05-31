@@ -1,13 +1,13 @@
-# home/ingestion.py
+# reviews/ingestion.py
 """
 Data ingestion pipeline for the two starter datasets.
 
-Dataset 1 — Kaggle 515K Hotel home (CSV)
+Dataset 1 — Kaggle 515K Hotel Reviews (CSV)
   Columns: Hotel_Address, Additional_Number_of_Scoring, Review_Date,
            Average_Score, Hotel_Name, Reviewer_Nationality,
            Negative_Review, Review_Total_Negative_Word_Counts,
-           Total_Number_of_home, Positive_Review,
-           Review_Total_Positive_Word_Counts, Total_Number_of_home_Reviewer_Has_Given,
+           Total_Number_of_Reviews, Positive_Review,
+           Review_Total_Positive_Word_Counts, Total_Number_of_Reviews_Reviewer_Has_Given,
            Reviewer_Score, Tags, days_since_review, lat, lng
 
 Dataset 2 — AfriSenti (TSV / parquet)
@@ -16,7 +16,7 @@ Dataset 2 — AfriSenti (TSV / parquet)
 
 Usage:
   from home.ingestion import KaggleIngester, AfriSentiIngester
-  KaggleIngester().ingest("path/to/Hotel_home.csv", batch_size=1000)
+  KaggleIngester().ingest("path/to/Hotel_Reviews.csv", batch_size=1000)
   AfriSentiIngester().ingest("path/to/sw.tsv")
 """
 
@@ -52,7 +52,7 @@ class KaggleIngester:
         Ingest the Kaggle CSV file into Review rows.
 
         Args:
-            csv_path:  Absolute path to Hotel_home.csv
+            csv_path:  Absolute path to Hotel_Reviews.csv
             batch_size: DB bulk_create batch size
             limit:     If set, stop after this many rows (for testing)
             queue_nlp: If True, queue Celery NLP tasks for each batch
@@ -113,7 +113,7 @@ class KaggleIngester:
         positive_text  = row.get("Positive_Review", "").strip()
         negative_text  = row.get("Negative_Review", "").strip()
 
-        # Skip completely empty home
+        # Skip completely empty reviews
         if not hotel_name:
             return None
         pos_empty = positive_text in ("", "No Positive", "Nothing")
@@ -195,12 +195,12 @@ class KaggleIngester:
         return saved, skipped
 
     @staticmethod
-    def _queue_nlp(home: list) -> None:
+    def _queue_nlp(reviews: list) -> None:
         try:
             from home.tasks import process_review_task
             from celery import group
             group(
-                process_review_task.s(str(r.pk)) for r in home
+                process_review_task.s(str(r.pk)) for r in reviews
             ).apply_async()
         except Exception as e:
             logger.debug(f"Could not queue NLP tasks: {e}")
