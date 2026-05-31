@@ -98,15 +98,20 @@ class ReviewAdmin(UnfoldModelAdmin):
     def reviewer_score_display(self, obj):
         if obj.reviewer_score is None:
             return "—"
-        score = obj.reviewer_score
+        try:
+            score = float(obj.reviewer_score)
+        except (ValueError, TypeError):
+            return "—"
         colour = (
             "#2e7d32" if score >= 8
             else "#e65100" if score >= 6
             else "#c62828"
         )
+        # Pre-format the score as a string since format_html doesn't support :.1f
+        score_str = f"{score:.1f}"
         return format_html(
-            '<span style="color:{c};font-weight:600">{s:.1f}</span>',
-            c=colour, s=score,
+            '<span style="color:{};font-weight:600">{}</span>',
+            colour, score_str,
         )
     reviewer_score_display.short_description = "Score"
     reviewer_score_display.admin_order_field = "reviewer_score"
@@ -120,11 +125,16 @@ class ReviewAdmin(UnfoldModelAdmin):
             "neutral":  ("#757575", "#fff"),
         }
         bg, fg = colours.get(obj.sentiment, ("#555", "#fff"))
-        pct    = f" {obj.sentiment_score:.0%}" if obj.sentiment_score else ""
+        pct = ""
+        if obj.sentiment_score is not None:
+            try:
+                pct = f" {float(obj.sentiment_score):.0%}"
+            except (ValueError, TypeError):
+                pass
         return format_html(
-            '<span style="background:{b};color:{f};padding:2px 8px;'
-            'border-radius:10px;font-size:11px;font-weight:600">{s}{p}</span>',
-            b=bg, f=fg, s=obj.sentiment.title(), p=pct,
+            '<span style="background:{};color:{};padding:2px 8px;'
+            'border-radius:10px;font-size:11px;font-weight:600">{}{}</span>',
+            bg, fg, obj.sentiment.title(), pct,
         )
     sentiment_badge.short_description = "Sentiment"
     sentiment_badge.admin_order_field = "sentiment"
