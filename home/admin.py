@@ -1,4 +1,4 @@
-# reviews/admin.py
+# home/admin.py
 """
 Unfold admin for the Review Sentiment & NLP Analysis layer.
 
@@ -10,7 +10,7 @@ Surfaces:
   ReviewDashboard       — custom admin view with Chart.js visualisations
 
 Command palette integration:
-  Reviews and property insights are registered as searchable models
+  home and property insights are registered as searchable models
   so they appear in the Unfold command palette semantic search.
 """
 
@@ -25,7 +25,7 @@ from django.db.models import Count, Avg, Q
 
 from unfold.admin import ModelAdmin as UnfoldModelAdmin
 
-from reviews.models import Review, TopicCluster, SentimentSnapshot, PropertyInsight
+from home.models import Review, TopicCluster, SentimentSnapshot, PropertyInsight
 
 
 # ── Review Admin ───────────────────────────────────────────────────────────
@@ -191,16 +191,16 @@ class ReviewAdmin(UnfoldModelAdmin):
 
     # ── Actions ────────────────────────────────────────────────────────────
 
-    @admin.action(description="Re-run NLP pipeline on selected reviews")
-    def reprocess_reviews(self, request, queryset):
+    @admin.action(description="Re-run NLP pipeline on selected home")
+    def reprocess_home(self, request, queryset):
         queryset.update(is_processed=False, processing_error="")
-        from reviews.tasks import process_review_task
+        from home.tasks import process_review_task
         from celery import group
         pks = list(queryset.values_list("pk", flat=True))
         group(process_review_task.s(str(pk)) for pk in pks).apply_async()
-        self.message_user(request, f"Queued NLP reprocessing for {len(pks)} reviews.")
+        self.message_user(request, f"Queued NLP reprocessing for {len(pks)} home.")
 
-    actions = ["reprocess_reviews"]
+    actions = ["reprocess_home"]
 
 
 # ── TopicCluster Admin ─────────────────────────────────────────────────────
@@ -246,24 +246,24 @@ class TopicClusterAdmin(UnfoldModelAdmin):
 @admin.register(PropertyInsight)
 class PropertyInsightAdmin(UnfoldModelAdmin):
     list_display  = [
-        "property_name", "total_reviews", "avg_reviewer_score",
+        "property_name", "total_home", "avg_reviewer_score",
         "sentiment_breakdown_display", "swahili_feedback_count",
         "generated_at",
     ]
     search_fields = ["property_name", "property_id", "overall_narrative"]
     readonly_fields = [
-        "total_reviews", "avg_reviewer_score",
+        "total_home", "avg_reviewer_score",
         "sentiment_breakdown", "top_topics", "aspect_scores",
         "swahili_feedback_count", "swahili_sentiment_avg",
         "generated_at", "narrative_display",
     ]
-    ordering = ["-total_reviews"]
+    ordering = ["-total_home"]
     fieldsets = (
         ("Property", {"fields": ("property_id", "property_name")}),
         ("Narrative insights", {"fields": ("narrative_display",)}),
         ("Statistics", {
             "fields": (
-                "total_reviews", "avg_reviewer_score",
+                "total_home", "avg_reviewer_score",
                 "sentiment_breakdown", "top_topics",
                 "aspect_scores", "swahili_feedback_count", "swahili_sentiment_avg",
             ),
@@ -305,7 +305,7 @@ class PropertyInsightAdmin(UnfoldModelAdmin):
 
     @admin.action(description="Regenerate insights for selected properties")
     def regenerate_insights(self, request, queryset):
-        from reviews.tasks import generate_property_insights
+        from home.tasks import generate_property_insights
         for insight in queryset:
             generate_property_insights.delay(property_id=insight.property_id)
         self.message_user(request, f"Queued insight regeneration for {queryset.count()} properties.")
@@ -318,7 +318,7 @@ class PropertyInsightAdmin(UnfoldModelAdmin):
 @admin.register(SentimentSnapshot)
 class SentimentSnapshotAdmin(UnfoldModelAdmin):
     list_display = [
-        "property_name", "snapshot_date", "total_reviews",
+        "property_name", "snapshot_date", "total_home",
         "positive_pct_display", "avg_score",
     ]
     list_filter  = ["snapshot_date"]
@@ -342,7 +342,7 @@ class SentimentSnapshotAdmin(UnfoldModelAdmin):
 class ReviewDashboardAdmin:
     """
     Standalone admin view that renders the Chart.js insight dashboard.
-    Registered as a custom URL on the admin site from reviews/apps.py.
+    Registered as a custom URL on the admin site from home/apps.py.
     """
 
     @staticmethod
@@ -397,7 +397,7 @@ class ReviewDashboardAdmin:
             .values_list("language", "n")
         )
 
-        # Aspect averages across all reviews
+        # Aspect averages across all home
         import statistics
         aspect_all: dict[str, list] = {}
         for asp in Review.objects.filter(is_processed=True).values_list("aspect_scores", flat=True).iterator():
@@ -418,9 +418,8 @@ class ReviewDashboardAdmin:
             "problem_props":  problem_props,
             "lang_counts":    lang_counts,
             "aspect_avgs":    aspect_avgs,
-            "total_reviews":  Review.objects.count(),
+            "total_home":  Review.objects.count(),
             "processed":      Review.objects.filter(is_processed=True).count(),
         }
-        return render(request, "admin/reviews/dashboard.html", context)
-    
+        return render(request, "admin/home/dashboard.html", context)
     

@@ -1,9 +1,9 @@
-# reviews/tasks.py
+# home/tasks.py
 """
-Celery tasks for the reviews app.
+Celery tasks for the home app.
 
   process_review_task        — NLP pipeline for one review
-  bulk_process_reviews       — batch NLP for unprocessed reviews
+  bulk_process_home       — batch NLP for unprocessed home
   build_sentiment_snapshots  — daily aggregate per property
   generate_property_insights — LLM narrative for each property
   update_topic_clusters      — rebuild TopicCluster counts + keywords
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task(
     bind=True,
-    name="reviews.tasks.process_review_task",
+    name="home.tasks.process_review_task",
     max_retries=3,
     default_retry_delay=10,
     acks_late=True,
@@ -38,38 +38,38 @@ def process_review_task(self, review_pk: str) -> dict:
         raise self.retry(exc=exc, countdown=self.default_retry_delay * (2 ** self.request.retries))
 
 
-@shared_task(name="reviews.tasks.bulk_process_reviews")
-def bulk_process_reviews(batch_size: int = 200) -> dict:
+@shared_task(name="home.tasks.bulk_process_home")
+def bulk_process_home(batch_size: int = 200) -> dict:
     """
-    Process all unprocessed reviews in batches.
+    Process all unprocessed home in batches.
     Safe to run as a periodic task — idempotent.
     """
     from home.models import Review
     from home.nlp import review_pipeline
 
     unprocessed = Review.objects.filter(is_processed=False).count()
-    logger.info(f"bulk_process_reviews: {unprocessed} reviews to process")
+    logger.info(f"bulk_process_home: {unprocessed} home to process")
 
     result = review_pipeline.process_batch(
         Review.objects.filter(is_processed=False),
         limit=batch_size,
     )
-    logger.info(f"bulk_process_reviews done: {result}")
+    logger.info(f"bulk_process_home done: {result}")
     return result
 
 
-@shared_task(name="reviews.tasks.build_sentiment_snapshots")
+@shared_task(name="home.tasks.build_sentiment_snapshots")
 def build_sentiment_snapshots() -> dict:
     """
     Build/refresh SentimentSnapshot rows for every property+date combination
-    that has processed reviews but no snapshot yet.
+    that has processed home but no snapshot yet.
 
     Run daily at midnight via Celery Beat.
     """
     from django.db.models import Avg, Count, Q
     from home.models import Review, SentimentSnapshot
 
-    # Find all property+date pairs with processed reviews
+    # Find all property+date pairs with processed home
     pairs = (
         Review.objects
         .filter(is_processed=True, review_date__isnull=False)
@@ -124,7 +124,7 @@ def build_sentiment_snapshots() -> dict:
             snapshot_date=date,
             defaults={
                 "property_name":    pname,
-                "total_reviews":    stats["total"] or 0,
+                "total_home":    stats["total"] or 0,
                 "positive_count":   stats["pos"]   or 0,
                 "negative_count":   stats["neg"]   or 0,
                 "neutral_count":    stats["neu"]   or 0,
@@ -144,7 +144,7 @@ def build_sentiment_snapshots() -> dict:
     return result
 
 
-@shared_task(name="reviews.tasks.update_topic_clusters")
+@shared_task(name="home.tasks.update_topic_clusters")
 def update_topic_clusters() -> dict:
     """
     Rebuild TopicCluster rows from review.topic_labels.
@@ -209,12 +209,12 @@ def update_topic_clusters() -> dict:
     return {"upserted": upserted}
 
 
-@shared_task(name="reviews.tasks.generate_property_insights")
+@shared_task(name="home.tasks.generate_property_insights")
 def generate_property_insights(property_id: str = None) -> dict:
     """
     Generate LLM narrative insights for one or all properties.
     If property_id is None, regenerates all properties that have
-    100+ processed reviews.
+    100+ processed home.
     """
     from home.models import Review, PropertyInsight
     from django.db.models import Avg, Count, Q
@@ -295,7 +295,7 @@ def _generate_insight_for_property(property_id: str) -> None:
     sw_count  = sw_qs.count()
     sw_sent   = sw_qs.aggregate(avg=Avg("sentiment_score"))["avg"]
 
-    # Aspect averages across all reviews
+    # Aspect averages across all home
     import statistics
     aspect_buckets: dict[str, list] = {}
     for asp in qs.values_list("aspect_scores", flat=True):
@@ -310,7 +310,7 @@ def _generate_insight_for_property(property_id: str) -> None:
     # LLM narrative generation
     narrative_data = _llm_generate_narrative(
         property_name=property_name,
-        total_reviews=stats["total"],
+        total_home=stats["total"],
         avg_score=stats["avg_rs"],
         pos_count=stats["pos_count"],
         neg_count=stats["neg_count"],
@@ -329,7 +329,7 @@ def _generate_insight_for_property(property_id: str) -> None:
             "weakness_summary":     narrative_data.get("weaknesses", ""),
             "actionable_advice":    narrative_data.get("advice", ""),
             "overall_narrative":    narrative_data.get("narrative", ""),
-            "total_reviews":        stats["total"] or 0,
+            "total_home":        stats["total"] or 0,
             "avg_reviewer_score":   round(float(stats["avg_rs"] or 0), 2),
             "sentiment_breakdown":  {
                 "positive": stats["pos_count"] or 0,
@@ -345,7 +345,7 @@ def _generate_insight_for_property(property_id: str) -> None:
 
 
 def _llm_generate_narrative(
-    property_name, total_reviews, avg_score, pos_count, neg_count,
+    property_name, total_home, avg_score, pos_count, neg_count,
     top_topics, pos_phrases, neg_phrases, aspect_avgs, sw_count,
 ) -> dict:
     """Call LLM to generate human-readable property narrative."""
@@ -358,8 +358,8 @@ def _llm_generate_narrative(
         if not system_user:
             return {}
 
-        pct_pos = round(pos_count / total_reviews * 100) if total_reviews else 0
-        pct_neg = round(neg_count / total_reviews * 100) if total_reviews else 0
+        pct_pos = round(pos_count / total_home * 100) if total_home else 0
+        pct_neg = round(neg_count / total_home * 100) if total_home else 0
 
         aspect_str = ", ".join(
             f"{k}: {v:.0%}" for k, v in sorted(
@@ -370,13 +370,13 @@ def _llm_generate_narrative(
         prompt = f"""You are a hospitality analytics expert writing insights for an East African rental platform.
 
 Property: {property_name}
-Total reviews: {total_reviews} | Avg score: {avg_score:.1f}/10
+Total home: {total_home} | Avg score: {avg_score:.1f}/10
 Sentiment: {pct_pos}% positive, {pct_neg}% negative
 Top topics: {', '.join(top_topics[:5])}
 Aspect scores: {aspect_str}
 What guests love: {', '.join(pos_phrases[:8])}
 What guests dislike: {', '.join(neg_phrases[:8])}
-Swahili reviews: {sw_count}
+Swahili home: {sw_count}
 
 Return JSON only:
 {{
@@ -402,7 +402,7 @@ Return JSON only:
     return {}
 
 
-@shared_task(name="reviews.tasks.ingest_kaggle_dataset")
+@shared_task(name="home.tasks.ingest_kaggle_dataset")
 def ingest_kaggle_dataset(
     csv_path: str,
     batch_size: int = 500,
@@ -418,7 +418,7 @@ def ingest_kaggle_dataset(
     )
 
 
-@shared_task(name="reviews.tasks.ingest_afrisenti_dataset")
+@shared_task(name="home.tasks.ingest_afrisenti_dataset")
 def ingest_afrisenti_dataset(file_path: str) -> dict:
     """Trigger AfriSenti ingestion as a Celery task."""
     from home.ingestion import AfriSentiIngester

@@ -22,24 +22,24 @@
 <!-- KPI Row -->
 <div class="dash-grid">
   <div class="kpi-card">
-    <div class="kpi-label">Total Reviews</div>
-    <div class="kpi-value" style="color:#1565c0">{{ total_reviews|default:0 }}</div>
+    <div class="kpi-label">Total home</div>
+    <div class="kpi-value" style="color:#1565c0">{{ total_home|default:0 }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Processed</div>
     <div class="kpi-value" style="color:#2e7d32">{{ processed|default:0 }}</div>
-    <div style="font-size:11px;color:#888">{{ processed|default:0 }} / {{ total_reviews|default:1 }} analysed</div>
+    <div style="font-size:11px;color:#888">{{ processed|default:0 }} / {{ total_home|default:1 }} analysed</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Positive Reviews</div>
+    <div class="kpi-label">Positive home</div>
     <div class="kpi-value" style="color:#2e7d32">{{ sent_counts.positive|default:0 }}</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Negative Reviews</div>
+    <div class="kpi-label">Negative home</div>
     <div class="kpi-value" style="color:#c62828">{{ sent_counts.negative|default:0 }}</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Swahili Reviews</div>
+    <div class="kpi-label">Swahili home</div>
     <div class="kpi-value" style="color:#4a148c">{{ lang_counts.sw|default:0 }}</div>
     <div style="font-size:11px;color:#888">East African context</div>
   </div>
@@ -81,7 +81,7 @@
 
 <!-- Problem Properties -->
 <div class="chart-card">
-  <div class="chart-title">Properties with Most Negative Reviews</div>
+  <div class="chart-title">Properties with Most Negative home</div>
   <canvas id="problemProps" height="120"></canvas>
 </div>
 
@@ -163,7 +163,7 @@ if (topTopics.length) {
     data: {
       labels: topTopics.map(t => t.label),
       datasets: [{
-        label: "Reviews",
+        label: "home",
         data: topTopics.map(t => t.count),
         backgroundColor: topTopics.map(t =>
           t.sent >= 0.65 ? COLORS.pos + "cc" :
@@ -205,7 +205,7 @@ if (problemProps.length) {
     data: {
       labels: problemProps.map(p => p.name),
       datasets: [{
-        label: "Negative reviews",
+        label: "Negative home",
         data: problemProps.map(p => p.neg),
         backgroundColor: COLORS.neg + "cc",
       }]

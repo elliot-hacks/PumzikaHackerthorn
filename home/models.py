@@ -1,4 +1,4 @@
-# reviews/models.py
+# home/models.py
 """
 Data models for the Review Sentiment & NLP Analysis layer.
 
@@ -6,15 +6,15 @@ Design decisions:
   - Review is the atomic unit. One row per guest review.
     Stores raw text, computed sentiment, topics, and embedding.
   - TopicCluster stores the discovered topics (LDA / LLM-extracted).
-    Many reviews belong to many topics via ReviewTopic.
+    Many home belong to many topics via ReviewTopic.
   - SentimentSnapshot is a daily aggregate per property — used by
-    the dashboard to plot trends without re-querying all reviews.
+    the dashboard to plot trends without re-querying all home.
   - PropertyInsight stores the LLM-generated narrative summary for
     a property — refreshed weekly.
 
 Language support:
   East African context means we track detected language per review
-  and use AfriSenti-aware scoring for sw (Swahili) reviews.
+  and use AfriSenti-aware scoring for sw (Swahili) home.
 """
 from __future__ import annotations
 import uuid
@@ -113,7 +113,7 @@ class Review(models.Model):
             models.Index(fields=["sentiment", "review_date"]),
         ]
         verbose_name        = "Review"
-        verbose_name_plural = "Reviews"
+        verbose_name_plural = "home"
 
     def __str__(self):
         score = f"{self.reviewer_score:.1f}" if self.reviewer_score else "?"
@@ -137,7 +137,7 @@ class Review(models.Model):
 class TopicCluster(models.Model):
     """
     A discovered topic cluster — either LDA-extracted or LLM-named.
-    Reviews are linked via the denormalised topic_labels field on Review
+    home are linked via the denormalised topic_labels field on Review
     for read performance, and via ReviewTopic for analytics.
     """
     id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -157,7 +157,7 @@ class TopicCluster(models.Model):
         verbose_name_plural = "Topic clusters"
 
     def __str__(self):
-        return f"{self.label} ({self.review_count} reviews)"
+        return f"{self.label} ({self.review_count} home)"
 
 
 class SentimentSnapshot(models.Model):
@@ -170,7 +170,7 @@ class SentimentSnapshot(models.Model):
     property_name   = models.CharField(max_length=255)
     snapshot_date   = models.DateField(db_index=True)
 
-    total_reviews   = models.IntegerField(default=0)
+    total_home   = models.IntegerField(default=0)
     positive_count  = models.IntegerField(default=0)
     negative_count  = models.IntegerField(default=0)
     neutral_count   = models.IntegerField(default=0)
@@ -179,7 +179,7 @@ class SentimentSnapshot(models.Model):
 
     # Top topics for this day
     top_topics      = models.JSONField(default=list)
-    # Aspect scores averaged across all reviews for the day
+    # Aspect scores averaged across all home for the day
     aspect_averages = models.JSONField(default=dict)
 
     class Meta:
@@ -193,19 +193,19 @@ class SentimentSnapshot(models.Model):
         verbose_name_plural = "Sentiment snapshots"
 
     def __str__(self):
-        return f"{self.property_name} — {self.snapshot_date} ({self.total_reviews} reviews)"
+        return f"{self.property_name} — {self.snapshot_date} ({self.total_home} home)"
 
     @property
     def positive_pct(self) -> float:
-        if not self.total_reviews:
+        if not self.total_home:
             return 0.0
-        return round(self.positive_count / self.total_reviews * 100, 1)
+        return round(self.positive_count / self.total_home * 100, 1)
 
     @property
     def negative_pct(self) -> float:
-        if not self.total_reviews:
+        if not self.total_home:
             return 0.0
-        return round(self.negative_count / self.total_reviews * 100, 1)
+        return round(self.negative_count / self.total_home * 100, 1)
 
 
 class PropertyInsight(models.Model):
@@ -225,7 +225,7 @@ class PropertyInsight(models.Model):
     overall_narrative  = models.TextField(blank=True)   # One-paragraph summary
 
     # Aggregate stats
-    total_reviews      = models.IntegerField(default=0)
+    total_home      = models.IntegerField(default=0)
     avg_reviewer_score = models.FloatField(default=0.0)
     sentiment_breakdown = models.JSONField(default=dict)  # {"positive": N, "negative": N, "neutral": N}
     top_topics         = models.JSONField(default=list)
@@ -238,11 +238,10 @@ class PropertyInsight(models.Model):
     generated_at    = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-total_reviews"]
+        ordering = ["-total_home"]
         verbose_name        = "Property insight"
         verbose_name_plural = "Property insights"
 
     def __str__(self):
-        return f"Insight: {self.property_name} ({self.total_reviews} reviews)"
-    
+        return f"Insight: {self.property_name} ({self.total_home} home)"
     

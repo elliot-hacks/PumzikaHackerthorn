@@ -1,9 +1,9 @@
-# reviews/apps.py
+# home/apps.py
 from django.apps import AppConfig
 
 
-class ReviewsConfig(AppConfig):
-    name               = "reviews"
+class HomeConfig(AppConfig):
+    name               = "home"
     verbose_name       = "Review Sentiment & NLP"
     default_auto_field = "django.db.models.BigAutoField"
 
@@ -17,23 +17,23 @@ class ReviewsConfig(AppConfig):
             from celery.schedules import crontab
             beat = getattr(settings, "CELERY_BEAT_SCHEDULE", {})
             defaults = {
-                "reviews.bulk_process_reviews": {
-                    "task":     "reviews.tasks.bulk_process_reviews",
+                "home.bulk_process_home": {
+                    "task":     "home.tasks.bulk_process_home",
                     "schedule": crontab(minute="*/15"),   # every 15 min
                     "options":  {"expires": 800},
                 },
-                "reviews.build_sentiment_snapshots": {
-                    "task":     "reviews.tasks.build_sentiment_snapshots",
+                "home.build_sentiment_snapshots": {
+                    "task":     "home.tasks.build_sentiment_snapshots",
                     "schedule": crontab(hour=0, minute=30),  # 00:30 daily
                     "options":  {"expires": 3_600},
                 },
-                "reviews.update_topic_clusters": {
-                    "task":     "reviews.tasks.update_topic_clusters",
+                "home.update_topic_clusters": {
+                    "task":     "home.tasks.update_topic_clusters",
                     "schedule": crontab(hour=1, minute=0),   # 01:00 daily
                     "options":  {"expires": 3_600},
                 },
-                "reviews.generate_property_insights": {
-                    "task":     "reviews.tasks.generate_property_insights",
+                "home.generate_property_insights": {
+                    "task":     "home.tasks.generate_property_insights",
                     "schedule": crontab(hour=2, minute=0),   # 02:00 daily
                     "options":  {"expires": 7_200},
                 },
@@ -58,9 +58,9 @@ class ReviewsConfig(AppConfig):
             def patched_get_urls(self_inner):
                 custom = [
                     path(
-                        "reviews/dashboard/",
+                        "home/dashboard/",
                         dj_admin.site.admin_view(ReviewDashboardAdmin.view),
-                        name="reviews_dashboard",
+                        name="home_dashboard",
                     )
                 ]
                 return custom + original_get_urls(self_inner)
@@ -68,4 +68,3 @@ class ReviewsConfig(AppConfig):
             dj_admin.site.__class__.get_urls = patched_get_urls
         except Exception:
             pass
-    

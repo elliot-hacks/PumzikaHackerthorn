@@ -1,4 +1,4 @@
-# reviews/nlp.py
+# home/nlp.py
 """
 NLP engine for the Review Sentiment & NLP Analysis challenge.
 
@@ -134,7 +134,7 @@ language_detector = LanguageDetector()
 class SentimentScorer:
     """
     Hybrid sentiment scorer:
-      1. AfriSenti-aware lexicon for Swahili reviews (fast, offline)
+      1. AfriSenti-aware lexicon for Swahili home (fast, offline)
       2. LLM scoring for English (accurate, async)
       3. Heuristic English lexicon as fallback
 
@@ -196,7 +196,7 @@ class SentimentScorer:
         """
         AfriSenti-informed Swahili sentiment.
         Uses combined Swahili + common English words since East African
-        reviews are often code-switched.
+        home are often code-switched.
         """
         words = set(re.findall(r"\b\w+\b", text.lower()))
         pos = len(words & SWAHILI_POSITIVE)
@@ -533,12 +533,12 @@ class ReviewNLPPipeline:
 
     def process_batch(self, queryset, limit: int = 500) -> dict:
         """
-        Process a batch of unprocessed reviews.
+        Process a batch of unprocessed home.
         Returns {"processed": N, "succeeded": N, "failed": N}
         """
         succeeded = failed = 0
-        reviews = queryset.filter(is_processed=False)[:limit]
-        for review in reviews:
+        home = queryset.filter(is_processed=False)[:limit]
+        for review in home:
             ok = self.process(review)
             if ok:
                 succeeded += 1
