@@ -351,12 +351,7 @@ def _llm_generate_narrative(
     """Call LLM to generate human-readable property narrative."""
     try:
         import json
-        from ai.services import ai_service_provider
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        system_user = User.objects.filter(is_superuser=True).first()
-        if not system_user:
-            return {}
+        from home.llm_service import _llm_service
 
         pct_pos = round(pos_count / total_home * 100) if total_home else 0
         pct_neg = round(neg_count / total_home * 100) if total_home else 0
@@ -386,17 +381,11 @@ Return JSON only:
   "narrative": "One compelling paragraph summary for property management"
 }}"""
 
-        response = ai_service_provider.chat_completion_sync(
-            user=system_user,
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-            max_tokens=600,
-            response_format={"type": "json_object"},
-            timeout=15,
+        result_str = _llm_service._call_with_failover(
+            prompt, temperature=0.3, max_tokens=600, json_response=True
         )
-        if response and response.get("content"):
-            return json.loads(response["content"])
+        if result_str:
+            return json.loads(result_str)
     except Exception as e:
         logger.debug(f"LLM narrative generation failed: {e}")
     return {}

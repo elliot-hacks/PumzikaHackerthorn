@@ -141,6 +141,7 @@ UNFOLD = {
     "SITE_TITLE": "NLP Review Analytics",
     "COMMAND": {
         "search_models": ["home.Review", "home.PropertyInsight", "home.TopicCluster"],
+        "search_callback": "home.utils.nlp_search_callback",
         "show_history": False,
     },
 }

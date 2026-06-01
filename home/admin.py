@@ -13,23 +13,22 @@ Command palette integration:
   home and property insights are registered as searchable models
   so they appear in the Unfold command palette semantic search.
 """
-
 from __future__ import annotations
-
+import json
+import logging
 from django.contrib import admin
 from django.urls import path
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.db.models import Count, Avg, Q
-
+from django.views.decorators.http import require_GET
 from unfold.admin import ModelAdmin as UnfoldModelAdmin
-
 from home.models import Review, TopicCluster, SentimentSnapshot, PropertyInsight
 
 
 # ── Review Admin ───────────────────────────────────────────────────────────
-
 @admin.register(Review)
 class ReviewAdmin(UnfoldModelAdmin):
     list_display = [
@@ -214,7 +213,6 @@ class ReviewAdmin(UnfoldModelAdmin):
 
 
 # ── TopicCluster Admin ─────────────────────────────────────────────────────
-
 @admin.register(TopicCluster)
 class TopicClusterAdmin(UnfoldModelAdmin):
     list_display  = [
@@ -252,7 +250,6 @@ class TopicClusterAdmin(UnfoldModelAdmin):
 
 
 # ── PropertyInsight Admin ──────────────────────────────────────────────────
-
 @admin.register(PropertyInsight)
 class PropertyInsightAdmin(UnfoldModelAdmin):
     list_display  = [
@@ -324,7 +321,6 @@ class PropertyInsightAdmin(UnfoldModelAdmin):
 
 
 # ── SentimentSnapshot Admin ────────────────────────────────────────────────
-
 @admin.register(SentimentSnapshot)
 class SentimentSnapshotAdmin(UnfoldModelAdmin):
     list_display = [
@@ -348,7 +344,6 @@ class SentimentSnapshotAdmin(UnfoldModelAdmin):
 
 
 # ── Custom Dashboard View ──────────────────────────────────────────────────
-
 class ReviewDashboardAdmin:
     """
     Standalone admin view that renders the Chart.js insight dashboard.
@@ -433,3 +428,146 @@ class ReviewDashboardAdmin:
         }
         return render(request, "admin/home/dashboard.html", context)
     
+
+class NLPAdminSiteMixin:
+    """
+    Mixin that injects the two endpoints the command palette JS calls:
+      POST /admin/home/api/chat/           → handleChatQuery()
+      POST /admin/home/api/command-palette/ → executeCommand() + fetchStatus()
+    """
+
+    def get_urls(self):
+        from django.urls import path
+        custom = [
+            path(
+                "home/api/chat/",
+                self.admin_view(self._nlp_chat_view),
+                name="home_nlp_chat",
+            ),
+            path(
+                "home/api/command-palette/",
+                self.admin_view(self._nlp_command_view),
+                name="home_nlp_command",
+            ),
+        ]
+        return custom + super().get_urls()
+
+    # ── module-level engine singleton ──────────────────────────────────
+    _engine = None
+
+    @classmethod
+    def _get_engine(cls):
+        if cls._engine is None:
+            from home.nlp import NLPQueryEngine
+            cls._engine = NLPQueryEngine()
+        return cls._engine
+
+    # ── /admin/home/api/chat/ ──────────────────────────────────────────
+    def _nlp_chat_view(self, request):
+        if request.method != "POST":
+            return JsonResponse({"success": False, "error": "POST only"}, status=405)
+        try:
+            body = json.loads(request.body)
+        except (json.JSONDecodeError, AttributeError):
+            return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+
+        query   = (body.get("query") or "").strip()
+        history = body.get("history", [])
+
+        if not query:
+            return JsonResponse({"success": False, "error": "query required"}, status=400)
+
+        try:
+            result = self._get_engine().process_query(query, history=history)
+            return JsonResponse({
+                "success":  True,
+                "response": result["response"],
+                "data":     result.get("data", {}),
+            })
+        except Exception as e:
+            logging.getLogger(__name__).exception("chat view error")
+            return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    # ── /admin/home/api/command-palette/ ──────────────────────────────
+    def _nlp_command_view(self, request):
+        if request.method != "POST":
+            return JsonResponse({"success": False, "error": "POST only"}, status=405)
+        try:
+            body = json.loads(request.body)
+        except (json.JSONDecodeError, AttributeError):
+            return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+
+        command = body.get("command", "")
+        params  = body.get("params", {})
+
+        handlers = {
+            "get_status":        self._cmd_get_status,
+            "analyze_sentiment": self._cmd_analyze_sentiment,
+            "extract_topics":    self._cmd_extract_topics,
+            "generate_insights": self._cmd_generate_insights,
+            "update_clusters":   self._cmd_update_clusters,
+            "build_snapshots":   self._cmd_build_snapshots,
+        }
+
+        handler = handlers.get(command)
+        if not handler:
+            return JsonResponse({"success": False, "error": f"Unknown command: {command}"}, status=400)
+
+        try:
+            return JsonResponse(handler(params))
+        except Exception as e:
+            logging.getLogger(__name__).exception(f"command {command} error")
+            return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    # ── command handlers ───────────────────────────────────────────────
+    def _cmd_get_status(self, params):
+        from home.models import Review, TopicCluster, PropertyInsight
+        from django.db.models import Count
+
+        total     = Review.objects.count()
+        processed = Review.objects.filter(is_processed=True).count()
+        swahili   = Review.objects.filter(language="sw").count()
+        clusters  = TopicCluster.objects.count()
+        insights  = PropertyInsight.objects.count()
+
+        return {
+            "success": True,
+            "data": {
+                "reviews": {
+                    "total":           total,
+                    "processed":       processed,
+                    "processing_rate": round(processed / total * 100) if total else 0,
+                },
+                "languages": {"swahili": swahili},
+                "topics":    {"clusters": clusters},
+                "insights":  {"generated": insights},
+            },
+        }
+
+    def _cmd_analyze_sentiment(self, params):
+        from home.tasks import bulk_process_reviews
+        batch = params.get("batch_size", 100)
+        task  = bulk_process_reviews.delay(batch_size=batch)
+        return {"success": True, "message": f"Sentiment analysis queued (batch={batch})", "task_id": task.id}
+
+    def _cmd_extract_topics(self, params):
+        from home.tasks import extract_topics_task
+        task = extract_topics_task.delay(update_clusters=params.get("update_clusters", True))
+        return {"success": True, "message": "Topic extraction queued", "task_id": task.id}
+
+    def _cmd_generate_insights(self, params):
+        from home.tasks import generate_property_insights
+        task = generate_property_insights.delay()
+        return {"success": True, "message": "Insight generation queued", "task_id": task.id}
+
+    def _cmd_update_clusters(self, params):
+        from home.tasks import update_topic_clusters
+        task = update_topic_clusters.delay()
+        return {"success": True, "message": "Cluster update queued", "task_id": task.id}
+
+    def _cmd_build_snapshots(self, params):
+        from home.tasks import build_sentiment_snapshots
+        task = build_sentiment_snapshots.delay()
+        return {"success": True, "message": "Snapshot build queued", "task_id": task.id}
+
+

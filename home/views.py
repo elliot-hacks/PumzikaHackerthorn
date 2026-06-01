@@ -249,11 +249,18 @@ def chat_api(request):
         engine = NLPQueryEngine()
         
         # Process the query with the LLM
-        result = engine.process_query(query, history)
-        
+        try:
+            result = engine.process_query(query, history)
+        except Exception as e:
+            logger.error(f"NLP query processing failed: {e}")
+            return JsonResponse({
+                "success": False,
+                "error": "Failed to process query. Please try again later.",
+            }, status=500)
+
         return JsonResponse({
             "success": True,
-            "response": result["response"],
+            "response": result.get("response", ""),
             "data": result.get("data", {}),
         })
     except Exception as e:

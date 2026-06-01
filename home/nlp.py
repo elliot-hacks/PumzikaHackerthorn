@@ -153,25 +153,19 @@ class SentimentScorer:
         """
         Primary entry point.
         reviewer_score (1–10) is used as a strong signal when available.
+        
+        NOTE: For batch processing, we use ONLY heuristic methods (no LLM)
+        to avoid API rate limits and costs. LLM is reserved for on-demand
+        command palette queries.
         """
         if not text or not text.strip():
             return self._from_reviewer_score(reviewer_score)
 
-        # Swahili: use lexicon (AfriSenti-informed)
+        # Swahili: use AfriSenti-informed lexicon
         if language == "sw":
             return self._swahili_lexicon(text, reviewer_score)
 
-        # English: try LLM first, fall back to heuristic
-        llm_result = self._llm_score(text, language)
-        if llm_result:
-            label, score = llm_result
-            # Blend with reviewer_score if available
-            if reviewer_score is not None:
-                rs_label, rs_score = self._reviewer_score_signal(reviewer_score)
-                if rs_label == label:
-                    score = min(1.0, score * 1.1)
-            return label, score, "llm"
-
+        # English: use heuristic lexicon (NO LLM for batch processing)
         return self._heuristic_english(text, reviewer_score)
 
     def _from_reviewer_score(self, rs: Optional[float]) -> tuple[str, float, str]:
@@ -244,13 +238,8 @@ class SentimentScorer:
         """Call LLM for sentiment. Returns (label, score) or None."""
         try:
             import json
-            from ai.services import ai_service_provider
-            from django.contrib.auth import get_user_model
-            User = get_user_model()
-            system_user = User.objects.filter(is_superuser=True).first()
-            if not system_user:
-                return None
-
+            from home.llm_service import _llm_service
+            
             prompt = f"""Analyse the sentiment of this hospitality review.
 Language hint: {language}
 Review: \"\"\"{text[:800]}\"\"\"
@@ -258,17 +247,11 @@ Review: \"\"\"{text[:800]}\"\"\"
 Return JSON only — no markdown, no explanation:
 {{"label": "positive|negative|neutral", "score": 0.0-1.0, "confidence": "high|medium|low"}}"""
 
-            response = ai_service_provider.chat_completion_sync(
-                user=system_user,
-                messages=[{"role": "user", "content": prompt}],
-                model="llama-3.3-70b-versatile",
-                temperature=0.0,
-                max_tokens=80,
-                response_format={"type": "json_object"},
-                timeout=8,
+            result_str = _llm_service._call_with_failover(
+                prompt, temperature=0.0, max_tokens=80, json_response=True
             )
-            if response and response.get("content"):
-                data = json.loads(response["content"])
+            if result_str:
+                data = json.loads(result_str)
                 label = data.get("label", "neutral")
                 score = float(data.get("score", 0.5))
                 if label not in ("positive", "negative", "neutral"):
@@ -317,12 +300,13 @@ class AfriSentiAnalyzer:
     Supports multiple African languages including Swahili, Arabic, Amharic, etc.
     """
 
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str = None, model_dir: str = None):
         self.model = None
         self.tokenizer = None
         self.device = "cpu"
         self.model_path = model_path or "model.safetensors"
         self.config_path = "config.json"
+        self.model_dir = model_dir or "."
         self._initialized = False
         self._init_failed = False
 
@@ -354,7 +338,7 @@ class AfriSentiAnalyzer:
             base_model = config.get('base_model_name', 'bert-base-multilingual-uncased')
 
             # Load tokenizer from HuggingFace (small download, ~1MB)
-            self.tokenizer = AutoTokenizer.from_pretrained(base_model)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_dir, local_files_only=True)
 
             # Load model from local safetensors file
             from transformers import AutoConfig
@@ -367,7 +351,7 @@ class AfriSentiAnalyzer:
 
             self.model = AutoModelForSequenceClassification.from_pretrained(
                 base_model,
-                state_dict=torch.load(self.model_path, map_location=self.device, weights_only=True),
+                state_dict=torch.load(self.model_path, map_location=self.device, weights_only=False),
                 config=model_config,
                 local_files_only=True,
             )
@@ -469,6 +453,9 @@ class TopicExtractor:
             "key_phrases": ["very clean rooms", "friendly staff"],
             "aspect_scores": {"cleanliness": 0.9, "staff": 0.8, ...}
         }
+        
+        NOTE: For batch processing, we use ONLY keyword-based extraction (no LLM)
+        to avoid API rate limits and costs. LLM is reserved for on-demand queries.
         """
         result = {
             "topics":        [],
@@ -479,13 +466,9 @@ class TopicExtractor:
         if not text or not text.strip():
             return result
 
-        # Try LLM
-        llm_result = self._llm_extract(text, language)
-        if llm_result:
-            result.update(llm_result)
-        else:
-            # Keyword fallback for topics
-            result["topics"] = self._keyword_topics(text)
+        # Use keyword-based extraction (NO LLM for batch processing)
+        result["topics"] = self._keyword_topics(text)
+        result["key_phrases"] = self._extract_key_phrases(text)
 
         # Always run aspect scoring (fast, no LLM needed)
         result["aspect_scores"] = self._aspect_scores(text)
@@ -495,13 +478,8 @@ class TopicExtractor:
     def _llm_extract(self, text: str, language: str) -> Optional[dict]:
         try:
             import json
-            from ai.services import ai_service_provider
-            from django.contrib.auth import get_user_model
-            User = get_user_model()
-            system_user = User.objects.filter(is_superuser=True).first()
-            if not system_user:
-                return None
-
+            from home.llm_service import _llm_service
+            
             topics_str = "\n".join(f"- {t}" for t in self.CANONICAL_TOPICS)
             prompt = f"""Extract topics and key phrases from this hospitality review.
 Language: {language}
@@ -517,17 +495,11 @@ Return JSON only:
 }}
 Only use topics from the list. Include 2-5 key phrases (exact short quotes from the review)."""
 
-            response = ai_service_provider.chat_completion_sync(
-                user=system_user,
-                messages=[{"role": "user", "content": prompt}],
-                model="llama-3.3-70b-versatile",
-                temperature=0.1,
-                max_tokens=200,
-                response_format={"type": "json_object"},
-                timeout=10,
+            result_str = _llm_service._call_with_failover(
+                prompt, temperature=0.1, max_tokens=200, json_response=True
             )
-            if response and response.get("content"):
-                data = json.loads(response["content"])
+            if result_str:
+                data = json.loads(result_str)
                 topics = [
                     t for t in data.get("topics", [])
                     if t in self.CANONICAL_TOPICS
@@ -557,6 +529,36 @@ Only use topics from the list. Include 2-5 key phrases (exact short quotes from 
             if words & ASPECT_KEYWORDS.get(aspect, set()):
                 found.append(topic)
         return found
+
+    def _extract_key_phrases(self, text: str) -> list[str]:
+        """Extract key phrases from review text using simple heuristics."""
+        # Extract short phrases around aspect keywords
+        phrases = []
+        text_lower = text.lower()
+        
+        for aspect, keywords in ASPECT_KEYWORDS.items():
+            for kw in keywords:
+                for match in re.finditer(r"\b" + re.escape(kw) + r"\b", text_lower):
+                    # Get surrounding context (10 chars each side)
+                    start = max(0, match.start() - 20)
+                    end = min(len(text), match.end() + 30)
+                    phrase = text[start:end].strip()
+                    if len(phrase) > 10 and phrase not in phrases:
+                        phrases.append(phrase)
+        
+        # Also extract sentences with sentiment words
+        sentiment_words = list(SWAHILI_POSITIVE | SWAHILI_NEGATIVE | ENGLISH_POSITIVE | ENGLISH_NEGATIVE)
+        for word in sentiment_words[:20]:  # Limit to avoid too many
+            if word in text_lower:
+                idx = text_lower.find(word)
+                start = max(0, text_lower.rfind(' ', 0, idx - 5))
+                end = min(len(text), text_lower.find(' ', idx + len(word) + 5))
+                if end - start > 10 and end - start < 100:
+                    phrase = text[start:end].strip()
+                    if phrase not in phrases:
+                        phrases.append(phrase)
+        
+        return phrases[:10]  # Limit to 10 phrases
 
     def _aspect_scores(self, text: str) -> dict[str, float]:
         """
@@ -852,9 +854,7 @@ The query may be in English or Swahili. Map to these intents:
             for h in hotels
         ]
 
-        response = self.llm.generate_text(
-            f"Based on these top hotels by reviewer score, provide a helpful summary: {hotels_list}"
-        )
+        response = f"Here are the top {len(hotels_list)} hotels by reviewer score:"
 
         return {"response": response, "data": {"hotels": hotels_list}}
 
@@ -879,38 +879,59 @@ The query may be in English or Swahili. Map to these intents:
             for h in hotels
         ]
 
-        response = self.llm.generate_text(
-            f"Based on these lowest-rated hotels, provide a helpful summary: {hotels_list}"
-        )
+        response = f"Here are the bottom {len(hotels_list)} hotels by reviewer score:"
 
         return {"response": response, "data": {"hotels": hotels_list}}
 
     def _get_hotels_by_aspect(self, aspect: str, query: str) -> dict:
         """Get hotels rated highly on a specific aspect."""
         from home.models import Review
-        from django.db.models import Avg, Count
-        from django.db.models.functions import JSONObject
+        from django.db.models import Count
 
         # Query for hotels with good aspect scores
+        # Filter by reviews that have the aspect in their aspect_scores
         hotels = (
             Review.objects
             .filter(is_processed=True, aspect_scores__has_key=aspect)
             .values("property_name", "property_id")
-            .annotate(
-                aspect_avg=Avg("aspect_scores"),
-                review_count=Count("id")
-            )
+            .annotate(review_count=Count("id"))
             .filter(review_count__gte=5)
-            .order_by("-aspect_avg")[:10]
+            .order_by("-review_count")[:10]
         )
 
-        hotels_list = [
-            {"name": h["property_name"], "aspect_score": float(h["aspect_avg"] or 0), "count": h["review_count"]}
-            for h in hotels
-        ]
+        # Build hotel list with aspect scores calculated manually
+        hotels_list = []
+        for h in hotels:
+            # Get reviews for this hotel and extract aspect scores
+            reviews = Review.objects.filter(
+                property_id=h["property_id"],
+                is_processed=True,
+                aspect_scores__has_key=aspect
+            ).values_list("aspect_scores", flat=True)
+            
+            scores = []
+            for r in reviews:
+                if r and isinstance(r, dict) and aspect in r:
+                    try:
+                        score = float(r[aspect])
+                        if 0 <= score <= 1:  # Valid score range
+                            scores.append(score)
+                    except (TypeError, ValueError):
+                        pass
+            
+            avg_score = sum(scores) / len(scores) if scores else 0
+            
+            hotels_list.append({
+                "name": h["property_name"],
+                "aspect_score": round(avg_score, 2),
+                "count": h["review_count"]
+            })
+
+        # Sort by aspect score
+        hotels_list.sort(key=lambda x: x["aspect_score"], reverse=True)
 
         response = f"Here are the top hotels for {aspect} based on review analysis:"
-        return {"response": response, "data": {"hotels": hotels_list}}
+        return {"response": response, "data": {"hotels": hotels_list[:10]}}
 
     def _get_common_complaints(self, query: str) -> dict:
         """Get most common complaint topics from negative reviews."""
@@ -953,7 +974,7 @@ The query may be in English or Swahili. Map to these intents:
         return {"response": response, "data": {"hotels": hotels_list}}
 
     def _general_query(self, query: str) -> dict:
-        """Handle general queries using LLM with database context."""
+        """Handle general queries using database context."""
         from home.models import Review
         from django.db.models import Count, Avg
 
@@ -964,10 +985,7 @@ The query may be in English or Swahili. Map to these intents:
             "avg_score": float(Review.objects.filter(reviewer_score__isnull=False).aggregate(Avg("reviewer_score"))["reviewer_score__avg"] or 0),
         }
 
-        response = self.llm.generate_text(
-            f"Answer this question about our hotel review database: '{query}'. "
-            f"Here are some stats: {stats}. Provide a helpful response."
-        )
+        response = f"Database stats: {stats['total_reviews']} reviews, {stats['total_hotels']} hotels, avg score {stats['avg_score']:.1f}"
 
         return {"response": response, "data": {"stats": stats}}
 

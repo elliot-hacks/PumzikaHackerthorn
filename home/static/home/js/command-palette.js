@@ -15,9 +15,9 @@
     'use strict';
 
     const CONFIG = {
-        apiEndpoint: '/home/api/command-palette/',
-        chatEndpoint: '/home/api/chat/',
-        dashboardUrl: '/home/dashboard/',
+        apiEndpoint: '/admin/home/api/command-palette/',
+        chatEndpoint: '/admin/home/api/chat/',
+        dashboardUrl: '/admin/home/dashboard/',
         reviewsUrl: '/admin/home/review/',
         topicsUrl: '/admin/home/topiccluster/',
         insightsUrl: '/admin/home/propertyinsight/',
@@ -150,11 +150,27 @@
     function handleInput(e) {
         const query = e.target.value.toLowerCase().trim();
         selectedIndex = 0;
+        
+        // English question patterns
+        const englishPatterns = [
+            'what', 'which', 'how', 'show', 'tell', 'best', 'worst',
+            'where', 'when', 'who', 'why', 'find', 'list', 'get'
+        ];
+        
+        // Swahili question patterns for hotel queries
+        const swahiliPatterns = [
+            'hoteli', 'bora', 'nzuri', 'mbaya', 'chafu', 'vibaya',
+            'usafi', 'safi', 'wafanyakazi', 'huduma', 'eneo', 'mahali',
+            'bei', 'gharama', 'wifi', 'intaneti', 'chakula', 'kiamshakinywa',
+            'kelele', 'utulivu', 'malalamiko'
+        ];
+        
         const isQuestion = query.length > 3 && (
-            query.startsWith('what') || query.startsWith('which') || query.startsWith('how') ||
-            query.startsWith('show') || query.startsWith('tell') || query.startsWith('best') ||
-            query.startsWith('worst') || query.endsWith('?')
+            englishPatterns.some(p => query.startsWith(p)) ||
+            swahiliPatterns.some(p => query.includes(p)) ||
+            query.endsWith('?')
         );
+        
         if (isQuestion) {
             isChatMode = true;
             showSuggestions(false);
@@ -251,10 +267,13 @@
         if (data && data.hotels) {
             html += '<div style="margin-top:12px;">';
             data.hotels.slice(0, 5).forEach((hotel, i) => {
-                const scoreColor = hotel.avg_score >= 8 ? '#2e7d32' : hotel.avg_score >= 6 ? '#e65100' : '#c62828';
+                // Support both avg_score (for best/worst) and aspect_score (for aspect queries)
+                const score = hotel.avg_score !== undefined ? hotel.avg_score : (hotel.aspect_score || 0);
+                const scoreDisplay = score >= 1 ? score.toFixed(1) : (score * 100).toFixed(0) + '%';
+                const scoreColor = score >= 0.8 ? '#2e7d32' : score >= 0.6 ? '#e65100' : '#c62828';
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--color-background-default,#f5f5f5);border-radius:8px;margin-bottom:4px;">';
                 html += '<span style="font-size:13px;font-weight:500;">' + (i + 1) + '. ' + hotel.name + '</span>';
-                html += '<span style="color:' + scoreColor + ';font-weight:600;font-size:13px;">' + hotel.avg_score.toFixed(1) + '</span>';
+                html += '<span style="color:' + scoreColor + ';font-weight:600;font-size:13px;">' + scoreDisplay + '</span>';
                 html += '</div>';
             });
             html += '</div>';

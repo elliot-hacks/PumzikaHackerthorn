@@ -47,11 +47,14 @@ MODEL_CONFIGS = [
     ),
     ModelConfig(
         provider=ModelProvider.OPENROUTER,
-        model_name="google/gemini-2.0-flash-lite-preview-02-05:free",
+        model_name="google/gemini-3.5-flash",
         api_key_env="OPENROUTER_API_KEY",
         weight=3,  # Secondary provider with Swahili support (3/5 of requests)
     ),
 ]
+
+# OpenRouter API endpoint
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
 class MultiModelLLMService:
@@ -82,16 +85,17 @@ class MultiModelLLMService:
         try:
             if config.provider == ModelProvider.GROQ:
                 from groq import Groq
-                self.clients[config.provider] = Groq(api_key=api_key)
+                # Fix: Set explicit base_url to avoid URL duplication bug
+                self.clients[config.provider] = Groq(
+                    api_key=api_key,
+                    base_url="https://api.groq.com"
+                )
             elif config.provider == ModelProvider.MISTRAL:
                 from mistralai import Mistral
                 self.clients[config.provider] = Mistral(api_key=api_key)
             elif config.provider == ModelProvider.OPENROUTER:
-                import openai
-                self.clients[config.provider] = openai.OpenAI(
-                    api_key=api_key,
-                    base_url="https://openrouter.ai/api/v1"
-                )
+                # Store API key for direct requests module usage
+                self.clients[config.provider] = {"api_key": api_key}
         except Exception as e:
             logger.error(f"Failed to initialize {config.provider.value} client: {e}")
 
@@ -112,6 +116,10 @@ class MultiModelLLMService:
             else:
                 del self._response_cache[key]
         return None
+    
+    def generate_text(self, prompt: str, temperature: float = 0.3, max_tokens: int = 500) -> Optional[str]:
+        """Alias for _call_with_failover for backward compatibility."""
+        return self._call_with_failover(prompt, temperature=temperature, max_tokens=max_tokens)
 
     def _set_cache(self, key: str, response: Any) -> None:
         """Cache LLM response with timestamp."""
@@ -172,14 +180,32 @@ class MultiModelLLMService:
                 return response.choices[0].message.content
 
             elif config.provider == ModelProvider.OPENROUTER:
-                response = client.chat.completions.create(
-                    model=config.model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=temperature,
-                    max_tokens=min(max_tokens, config.max_tokens),
-                    response_format={"type": "json_object"} if json_response else None,
+                import requests
+                api_key = client.get("api_key", "")
+                
+                payload = {
+                    "model": config.model_name,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                    "max_tokens": min(max_tokens, config.max_tokens),
+                }
+                if json_response:
+                    payload["response_format"] = {"type": "json_object"}
+                
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                }
+                
+                response = requests.post(
+                    OPENROUTER_API_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=30
                 )
-                return response.choices[0].message.content
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
 
         except Exception as e:
             logger.warning(f"{config.provider.value} call failed: {e}")
@@ -486,4 +512,9 @@ def generate_property_insight(
 def answer_query(query: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Answer natural language queries using multi-model service."""
     return _llm_service.answer_query(query, data)
+
+
+
+# Alias for backward compatibility with views.py
+LLMService = MultiModelLLMService
 
