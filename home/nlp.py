@@ -195,9 +195,24 @@ class SentimentScorer:
     ) -> tuple[str, float, str]:
         """
         AfriSenti-informed Swahili sentiment.
+        First tries the transformer model, falls back to lexicon.
         Uses combined Swahili + common English words since East African
         home are often code-switched.
         """
+        # Try AfriSenti transformer model first
+        try:
+            label, score, model = afrisenti_analyzer.analyze(text, "sw")
+            if model == "afrisenti_transformer":
+                # Blend with reviewer_score if available
+                if reviewer_score is not None:
+                    rs_label, _ = self._reviewer_score_signal(reviewer_score)
+                    if rs_label == label:
+                        score = min(1.0, score * 1.1)
+                return label, round(score, 4), model
+        except Exception as e:
+            logger.debug(f"AfriSenti transformer failed, falling back to lexicon: {e}")
+
+        # Fallback to lexicon-based approach
         words = set(re.findall(r"\b\w+\b", text.lower()))
         pos = len(words & SWAHILI_POSITIVE)
         neg = len(words & SWAHILI_NEGATIVE)
@@ -291,6 +306,129 @@ Return JSON only — no markdown, no explanation:
 
 
 sentiment_scorer = SentimentScorer()
+
+
+# ── AfriSenti Model-Based Sentiment Analyzer ───────────────────────────────
+
+class AfriSentiAnalyzer:
+    """
+    Local AfriSenti transformer model for African language sentiment analysis.
+    Uses the downloaded model.safetensors file for zero-cost, offline inference.
+    Supports multiple African languages including Swahili, Arabic, Amharic, etc.
+    """
+
+    def __init__(self, model_path: str = None):
+        self.model = None
+        self.tokenizer = None
+        self.device = "cpu"
+        self.model_path = model_path or "model.safetensors"
+        self.config_path = "config.json"
+        self._initialized = False
+        self._init_failed = False
+
+    def _load_model(self):
+        """Lazily load the AfriSenti model on first use."""
+        if self._initialized or self._init_failed:
+            return
+
+        try:
+            import os
+            if not os.path.exists(self.model_path):
+                logger.warning(f"AfriSenti model not found at {self.model_path}")
+                self._init_failed = True
+                return
+
+            if not os.path.exists(self.config_path):
+                logger.warning(f"AfriSenti config not found at {self.config_path}")
+                self._init_failed = True
+                return
+
+            import json
+            import torch
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+            # Load config to get base model name
+            with open(self.config_path, 'r') as f:
+                config = json.load(f)
+
+            base_model = config.get('base_model_name', 'bert-base-multilingual-uncased')
+
+            # Load tokenizer from HuggingFace (small download, ~1MB)
+            self.tokenizer = AutoTokenizer.from_pretrained(base_model)
+
+            # Load model from local safetensors file
+            from transformers import AutoConfig
+            model_config = AutoConfig.from_pretrained(
+                base_model,
+                num_labels=3,
+                label2id={"negative": 0, "neutral": 1, "positive": 2},
+                id2label={0: "negative", 1: "neutral", 2: "positive"},
+            )
+
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                base_model,
+                state_dict=torch.load(self.model_path, map_location=self.device, weights_only=True),
+                config=model_config,
+                local_files_only=True,
+            )
+            self.model.to(self.device)
+            self.model.eval()
+
+            self._initialized = True
+            logger.info("AfriSenti model loaded successfully")
+
+        except Exception as e:
+            logger.warning(f"Failed to load AfriSenti model: {e}")
+            self._init_failed = True
+
+    def analyze(self, text: str, language: str = "sw") -> tuple[str, float, str]:
+        """
+        Analyze sentiment using the local AfriSenti model.
+        Returns (label, score, model_name).
+        """
+        if not text or not text.strip():
+            return "neutral", 0.5, "empty"
+
+        self._load_model()
+
+        if not self._initialized:
+            return "neutral", 0.5, "model_unavailable"
+
+        try:
+            import torch
+
+            # Tokenize
+            inputs = self.tokenizer(
+                text,
+                padding=True,
+                truncation=True,
+                max_length=128,
+                return_tensors="pt",
+            ).to(self.device)
+
+            # Inference
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)[0]
+
+            # Get prediction
+            confidence, predicted = torch.max(probabilities, dim=0)
+            label_id = predicted.item()
+            score = confidence.item()
+
+            # Map label ID to sentiment
+            id2label = self.model.config.id2label
+            label = id2label.get(label_id, "neutral")
+
+            return label, round(score, 4), "afrisenti_transformer"
+
+        except Exception as e:
+            logger.warning(f"AfriSenti inference failed: {e}")
+            return "neutral", 0.5, "inference_error"
+
+
+# Initialize AfriSenti analyzer (lazy loading)
+afrisenti_analyzer = AfriSentiAnalyzer()
 
 
 # ── Topic Extractor ────────────────────────────────────────────────────────
@@ -569,33 +707,129 @@ class NLPQueryEngine:
     def process_query(self, query: str, history: list = None) -> dict:
         """
         Process a natural language query about hotel reviews.
+        Supports both English and Swahili queries using LLM for intent detection.
         Returns {"response": str, "data": dict}
         """
         query_lower = query.lower().strip()
 
+        # First, use LLM to detect intent for better Swahili understanding
+        try:
+            intent = self._detect_intent_with_llm(query)
+            if intent:
+                return self._execute_intent(intent, query_lower)
+        except Exception as e:
+            logger.debug(f"LLM intent detection failed, using keyword fallback: {e}")
+
+        # Fallback to keyword-based detection
+        return self._detect_intent_by_keywords(query_lower)
+
+    def _detect_intent_with_llm(self, query: str) -> Optional[str]:
+        """Use LLM to detect query intent for better multilingual support."""
+        try:
+            prompt = f"""You are a hotel review analytics assistant. Analyze this query and return ONLY a JSON object with the intent.
+
+Query: "{query}"
+
+Return JSON only (no markdown):
+{{"intent": "best" or "worst" or "cleanliness" or "staff" or "location" or "value" or "wifi" or "noise" or "food" or "complaints" or "general"}}
+
+The query may be in English or Swahili. Map to these intents:
+- "best" = best/top hotels (Swahili: bora, nzuri, vizuri)
+- "worst" = worst/bad hotels (Swahili: mbaya, chafu, vibaya)
+- "cleanliness" = cleanliness/hygiene (Swahili: usafi, safi)
+- "staff" = staff/service (Swahili: wafanyakazi, huduma)
+- "location" = location/area (Swahili: eneo, mahali)
+- "value" = value/price (Swahili: bei, gharama)
+- "wifi" = wifi/internet (Swahili: intaneti, mtandao)
+- "noise" = noise/quiet (Swahili: kelele, utulivu)
+- "food" = food/breakfast (Swahili: chakula)
+- "complaints" = complaints/negative (Swahili: malalamiko)
+- "general" = anything else"""
+
+            from home.llm_service import _llm_service
+            result_str = _llm_service._call_with_failover(
+                prompt, temperature=0.1, max_tokens=50, json_response=True
+            )
+            if result_str:
+                result = json.loads(result_str)
+                return result.get("intent", None)
+        except Exception as e:
+            logger.debug(f"LLM intent detection error: {e}")
+        return None
+
+    def _execute_intent(self, intent: str, query_lower: str) -> dict:
+        """Execute a detected intent."""
+        intent_handlers = {
+            "best": self._get_best_hotels,
+            "worst": self._get_worst_hotels,
+            "cleanliness": lambda q: self._get_hotels_by_aspect("cleanliness", q),
+            "staff": lambda q: self._get_hotels_by_aspect("staff", q),
+            "location": lambda q: self._get_hotels_by_aspect("location", q),
+            "value": lambda q: self._get_hotels_by_aspect("value", q),
+            "wifi": lambda q: self._get_hotels_by_aspect("wifi", q),
+            "noise": lambda q: self._get_hotels_by_aspect("noise", q),
+            "food": lambda q: self._get_hotels_by_aspect("food", q),
+            "complaints": self._get_common_complaints,
+        }
+
+        handler = intent_handlers.get(intent)
+        if handler:
+            return handler(query_lower)
+        return self._general_query(query_lower)
+
+    def _detect_intent_by_keywords(self, query_lower: str) -> dict:
+        """Fallback keyword-based intent detection."""
+        # Detect query intent - English keywords
+        best_en = ["best", "top rated", "highest score", "top hotels", "good hotels"]
+        worst_en = ["worst", "lowest score", "bad hotels", "poor hotels"]
+
+        # Swahili keywords for hotel queries
+        best_sw = ["bora", "nzuri", "vizuri", "safii", "top", "best"]
+        worst_sw = ["mbaya", "chafu", "vibaya", "duni", "worst"]
+
+        # Aspect keywords - English
+        cleanliness_en = ["cleanliness", "clean", "hygiene", "dirty"]
+        staff_en = ["staff", "service", "friendly", "reception"]
+        location_en = ["location", "central", "area", "access"]
+        value_en = ["value", "price", "money", "worth", "expensive", "cheap"]
+        wifi_en = ["wifi", "internet", "connection", "signal"]
+        noise_en = ["noise", "quiet", "loud", "silent"]
+        food_en = ["food", "breakfast", "restaurant", "meal", "cuisine"]
+
+        # Aspect keywords - Swahili
+        cleanliness_sw = ["usafi", "safi", "chafu", "uchafu", "usafi wa"]
+        staff_sw = ["wafanyakazi", "huduma", "karibu", "mpole", "staff"]
+        location_sw = ["eneo", "mahali", "location", "mkabla"]
+        value_sw = ["bei", "gharama", "value", "pesa", "ghali", "rahisi"]
+        wifi_sw = ["wifi", "intaneti", "mtandao", "muunganisho"]
+        noise_sw = ["kelele", "utulivu", "noise", "sauti"]
+        food_sw = ["chakula", "kiamshakinywa", "chai", "meals", "food"]
+
         # Detect query intent and execute appropriate database query
-        if any(word in query_lower for word in ["best", "top rated", "highest score", "top hotels"]):
+        if any(word in query_lower for word in best_en + best_sw):
             return self._get_best_hotels(query_lower)
-        elif any(word in query_lower for word in ["worst", "lowest score", "bad hotels"]):
+        elif any(word in query_lower for word in worst_en + worst_sw):
             return self._get_worst_hotels(query_lower)
-        elif "cleanliness" in query_lower:
+        elif any(word in query_lower for word in cleanliness_en + cleanliness_sw):
             return self._get_hotels_by_aspect("cleanliness", query_lower)
-        elif "staff" in query_lower or "service" in query_lower:
+        elif any(word in query_lower for word in staff_en + staff_sw):
             return self._get_hotels_by_aspect("staff", query_lower)
-        elif "location" in query_lower:
+        elif any(word in query_lower for word in location_en + location_sw):
             return self._get_hotels_by_aspect("location", query_lower)
-        elif "value" in query_lower or "money" in query_lower:
+        elif any(word in query_lower for word in value_en + value_sw):
             return self._get_hotels_by_aspect("value", query_lower)
-        elif "wifi" in query_lower or "internet" in query_lower:
+        elif any(word in query_lower for word in wifi_en + wifi_sw):
             return self._get_hotels_by_aspect("wifi", query_lower)
-        elif "noise" in query_lower or "quiet" in query_lower:
+        elif any(word in query_lower for word in noise_en + noise_sw):
             return self._get_hotels_by_aspect("noise", query_lower)
-        elif "complain" in query_lower or "negative" in query_lower:
+        elif any(word in query_lower for word in food_en + food_sw):
+            return self._get_hotels_by_aspect("food", query_lower)
+        elif any(word in query_lower for word in ["complain", "negative", "malalamiko", "mbaya"]):
             return self._get_common_complaints(query_lower)
         elif "amsterdam" in query_lower:
             return self._get_hotels_in_city("Amsterdam", query_lower)
         else:
-            return self._general_query(query)
+            return self._general_query(query_lower)
 
     def _get_best_hotels(self, query: str) -> dict:
         """Get hotels with highest reviewer scores."""

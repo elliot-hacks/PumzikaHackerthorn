@@ -37,24 +37,19 @@ class ModelConfig:
 
 
 # Model configurations with load balancing weights
+# Note: OpenRouter uses Google's Gemini which has excellent Swahili support
 MODEL_CONFIGS = [
     ModelConfig(
         provider=ModelProvider.GROQ,
         model_name="llama-3.3-70b-versatile",
         api_key_env="GROQ_API_KEY",
-        weight=3,  # Primary provider (3/6 of requests)
-    ),
-    ModelConfig(
-        provider=ModelProvider.MISTRAL,
-        model_name="mistral-large-latest",
-        api_key_env="MISTRAL_API_KEY",
-        weight=2,  # Secondary provider (2/6 of requests)
+        weight=2,  # Primary provider (2/5 of requests)
     ),
     ModelConfig(
         provider=ModelProvider.OPENROUTER,
-        model_name="meta-llama/llama-3-70b-instruct",
+        model_name="google/gemini-2.0-flash-lite-preview-02-05:free",
         api_key_env="OPENROUTER_API_KEY",
-        weight=1,  # Tertiary provider (1/6 of requests)
+        weight=3,  # Secondary provider with Swahili support (3/5 of requests)
     ),
 ]
 
