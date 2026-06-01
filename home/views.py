@@ -366,3 +366,6 @@ def dashboard_with_commands(request):
     }
     return render(request, "admin/home/dashboard.html", context)
 
+
+def custom_404(request, exception=None):
+    return render(request, '404.html', status=404)

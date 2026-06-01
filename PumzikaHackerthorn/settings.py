@@ -10,6 +10,8 @@ DEBUG = True
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
+    "pumzika.elliothacks.com",
+    "3.126.57.92/",
 ]
 
 
@@ -32,6 +34,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'home',
 ]
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -85,7 +88,16 @@ else:
             'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
             'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         }
-    }       
+    }
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_REFERRER_POLICY = "strict-origin"
+    SECURE_HSTS_SECONDS = 31536000
+    SESSION_COOKIE_AGE = 86400       
 
 
 # Password validation
@@ -113,6 +125,11 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Africa/Nairobi'
 USE_I18N = True
 USE_TZ = True
+LANGUAGES = (
+    ("en", ("English")),
+    ("sw", ("Swahili")),
+)
+USE_THOUSAND_SEPARATOR = True 
 
 
 # Static files (CSS, JavaScript, Images)
@@ -150,6 +167,25 @@ UNFOLD = {
         "search_models": ["home.Review", "home.PropertyInsight", "home.TopicCluster"],
         "search_callback": "home.utils.nlp_search_callback",
         "show_history": False,
+    },
+}
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': 'debug.log',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': 'ERROR',
     },
 }
 
