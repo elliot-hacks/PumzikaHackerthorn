@@ -293,90 +293,150 @@ sentiment_scorer = SentimentScorer()
 
 
 # ── AfriSenti Model-Based Sentiment Analyzer ───────────────────────────────
+# In home/nlp.py - Replace your AfriSentiAnalyzer with this:
 
 class AfriSentiAnalyzer:
     """
     Local AfriSenti transformer model for African language sentiment analysis.
-    Uses the downloaded model.safetensors file for zero-cost, offline inference.
-    Supports multiple African languages including Swahili, Arabic, Amharic, etc.
+    Uses ONLY local files - no Hugging Face downloads.
     """
 
-    def __init__(self, model_path: str = None, model_dir: str = None):
+    def __init__(self, model_dir: str = None):
         self.model = None
         self.tokenizer = None
         self.device = "cpu"
-        self.model_path = model_path or "model.safetensors"
-        self.config_path = "config.json"
-        self.model_dir = model_dir or "."
+        # Point to your afrisenti_model directory
+        self.model_dir = model_dir or os.environ.get('AFRISENTI_MODEL_DIR', 'afrisenti_model')
+        self.model_path = os.path.join(self.model_dir, "model.safetensors")
+        self.config_path = os.path.join(self.model_dir, "config.json")
+        self.tokenizer_path = os.path.join(self.model_dir)  # Tokenizer files should be here
         self._initialized = False
         self._init_failed = False
 
     def _load_model(self):
-        """Lazily load the AfriSenti model on first use."""
+        """Lazily load the AfriSenti model from local files only."""
         if self._initialized or self._init_failed:
             return
 
         try:
             import os
+            import json
+            
+            # Check if model directory exists
+            if not os.path.exists(self.model_dir):
+                logger.warning(f"AfriSenti model directory not found: {self.model_dir}")
+                self._init_failed = True
+                return
+                
+            # Check for model file
             if not os.path.exists(self.model_path):
                 logger.warning(f"AfriSenti model not found at {self.model_path}")
                 self._init_failed = True
                 return
 
+            # Check for config file
             if not os.path.exists(self.config_path):
                 logger.warning(f"AfriSenti config not found at {self.config_path}")
                 self._init_failed = True
                 return
 
-            import json
             import torch
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
-
-            # Load config to get base model name
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+            
+            # Load config
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
 
             base_model = config.get('base_model_name', 'bert-base-multilingual-uncased')
+            
+            # IMPORTANT: Load tokenizer from local directory ONLY
+            # Set local_files_only=True to prevent HF downloads
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.tokenizer_path,
+                    local_files_only=True,  # ← THIS PREVENTS HF DOWNLOADS
+                    trust_remote_code=False
+                )
+                logger.info("Tokenizer loaded from local files")
+            except Exception as e:
+                logger.error(f"Cannot load tokenizer locally: {e}")
+                logger.error("Make sure you have tokenizer files in: %s", self.tokenizer_path)
+                self._init_failed = True
+                return
 
-            # Load tokenizer from HuggingFace (small download, ~1MB)
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_dir, local_files_only=True)
+            # Load model config from local or use default
+            try:
+                model_config = AutoConfig.from_pretrained(
+                    self.tokenizer_path,
+                    local_files_only=True,
+                    num_labels=3,
+                    label2id={"negative": 0, "neutral": 1, "positive": 2},
+                    id2label={0: "negative", 1: "neutral", 2: "positive"},
+                )
+            except Exception:
+                # Fallback to creating config manually
+                model_config = AutoConfig.for_model(
+                    "bert",
+                    num_labels=3,
+                    label2id={"negative": 0, "neutral": 1, "positive": 2},
+                    id2label={0: "negative", 1: "neutral", 2: "positive"},
+                )
 
             # Load model from local safetensors file
-            from transformers import AutoConfig
-            model_config = AutoConfig.from_pretrained(
-                base_model,
-                num_labels=3,
-                label2id={"negative": 0, "neutral": 1, "positive": 2},
-                id2label={0: "negative", 1: "neutral", 2: "positive"},
-            )
-
-            self.model = AutoModelForSequenceClassification.from_pretrained(
-                base_model,
-                state_dict=torch.load(self.model_path, map_location=self.device, weights_only=False),
-                config=model_config,
-                local_files_only=True,
-            )
+            from safetensors.torch import load_file
+            
+            # Create model with random weights first
+            self.model = AutoModelForSequenceClassification.from_config(model_config)
+            
+            # Load the saved weights
+            state_dict = load_file(self.model_path)
+            
+            # Handle potential key mismatches
+            new_state_dict = {}
+            for key, value in state_dict.items():
+                # Remove 'bert.' prefix if needed
+                if key.startswith('bert.'):
+                    new_key = key
+                else:
+                    new_key = f'bert.{key}'
+                new_state_dict[new_key] = value
+            
+            # Load weights
+            missing_keys, unexpected_keys = self.model.load_state_dict(new_state_dict, strict=False)
+            if missing_keys:
+                logger.debug(f"Missing keys: {missing_keys[:5]}...")
+            if unexpected_keys:
+                logger.debug(f"Unexpected keys: {unexpected_keys[:5]}...")
+            
             self.model.to(self.device)
             self.model.eval()
 
             self._initialized = True
-            logger.info("AfriSenti model loaded successfully")
+            logger.info("AfriSenti model loaded successfully from local directory: %s", self.model_dir)
 
         except Exception as e:
-            logger.warning(f"Failed to load AfriSenti model: {e}")
+            logger.error(f"Failed to load AfriSenti model: {e}", exc_info=True)
             self._init_failed = True
 
     def analyze(self, text: str, language: str = "sw") -> tuple[str, float, str]:
         """
         Analyze sentiment using the local AfriSenti model.
-        Returns (label, score, model_name).
+        
+        Args:
+            text: The text to analyze
+            language: Language code (sw, en, etc.) - for logging only
+            
+        Returns:
+            tuple: (label, score, model_name)
         """
         if not text or not text.strip():
-            return "neutral", 0.5, "empty"
+            return "neutral", 0.5, "empty_text"
 
+        # Try to load model if not already loaded
         self._load_model()
 
         if not self._initialized:
+            logger.debug("AfriSenti model not available, using fallback")
             return "neutral", 0.5, "model_unavailable"
 
         try:
@@ -402,9 +462,17 @@ class AfriSentiAnalyzer:
             score = confidence.item()
 
             # Map label ID to sentiment
-            id2label = self.model.config.id2label
+            id2label = {0: "negative", 1: "neutral", 2: "positive"}  # Default mapping
+            if hasattr(self.model.config, 'id2label'):
+                id2label = self.model.config.id2label
+            
             label = id2label.get(label_id, "neutral")
+            
+            # Ensure label is one of the expected values
+            if label not in ("positive", "negative", "neutral"):
+                label = "neutral"
 
+            logger.debug(f"AfriSenti analysis: {label} (score: {score:.4f})")
             return label, round(score, 4), "afrisenti_transformer"
 
         except Exception as e:
@@ -412,12 +480,8 @@ class AfriSentiAnalyzer:
             return "neutral", 0.5, "inference_error"
 
 
-# Initialize AfriSenti analyzer (lazy loading)
-afrisenti_analyzer = AfriSentiAnalyzer(
-    model_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "model.safetensors"),
-    model_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "afrisenti_model"),
-)
-
+# Initialize AfriSenti analyzer with path to your model directory
+afrisenti_analyzer = AfriSentiAnalyzer(model_dir="afrisenti_model")
 
 # ── Topic Extractor ────────────────────────────────────────────────────────
 

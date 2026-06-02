@@ -136,6 +136,7 @@ USE_THOUSAND_SEPARATOR = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
+AFRISENTI_MODEL_DIR = os.path.join(BASE_DIR, 'models', 'afrisenti') 
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_DIRS = [
