@@ -303,10 +303,10 @@ Looking to hire:
 
 ### Get in Touch
 
-**Website:** [pumzika-hackerthorn.com](https://github.com/elliot-hacks/PumzikaHackerthorn)  
-**Email:** hello@pumzika-hackerthorn.com  
-**GitHub:** github.com/elliot-hacks/PumzikaHackerthorn  
-**LinkedIn:** /company/pumzika-hackerthorn
+**Website:** [pumzika.elliothacks.com](https://pumzika.elliothacks.com)  
+**Email:** 
+**GitHub:** [github.com/elliot-hacks/PumzikaHackerthorn](https://github.com/elliot-hacks/PumzikaHackerthorn)  
+**LinkedIn:** [ElliotHacks](https://linkd)
 
 ### Next Steps
 
@@ -327,5 +327,5 @@ Looking to hire:
 
 ---
 
-*Prepared by the Pumzika Hackerthorn Team*  
+*Prepared by the Elliot Nkwama*  
 *June 2, 2026*

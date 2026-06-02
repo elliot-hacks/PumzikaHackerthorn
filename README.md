@@ -637,7 +637,7 @@ MIT License - Built for the Pumzika Hackerthorn
 
 - **GitHub Issues:** [Report bugs or request features](https://github.com/elliot-hacks/PumzikaHackerthorn/issues)
 - **Documentation:** This README and inline code comments
-- **Email:** [Your contact email]
+- **Email:** [thisguyhack](mailto:thisguyhack@gmail.com)
 
 ---
 
