@@ -29,7 +29,7 @@ def nlp_search_callback(request, search_term):
         return [
             SearchResult(
                 title=h["name"],
-                description=f"Score: {h.get('avg_score') or h.get('aspect_score', 0):.2f} — {result.get('response', '')}",
+                description=f"Score: {h.get('avg_score') or h.get('aspect_score', 0):.2f}",
                 link=f"/admin/home/review/?property_name={h['name']}",
                 icon="star",
             )
