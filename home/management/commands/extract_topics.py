@@ -1,3 +1,4 @@
+# home/management/commands/extract_topics.py
 """
 Django management command to extract topics from reviews and update topic clusters.
 Used by the command palette for quick NLP operations.

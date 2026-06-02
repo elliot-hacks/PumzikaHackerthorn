@@ -1,3 +1,4 @@
+# home/management/commands/nlp_status.py
 """
 Django management command to show NLP processing status and statistics.
 Used by the command palette for quick system status checks.

@@ -1,3 +1,4 @@
+# home/management/commands/import_kaggle_hotels.py
 """
 Django management command to import the Kaggle 515K Hotel Reviews dataset.
 Usage: python manage.py import_kaggle_hotels --csv-path path/to/Hotel_Reviews.csv --batch-size 500

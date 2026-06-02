@@ -1,3 +1,4 @@
+# home/management/commands/analyze_sentiment.py
 """
 Django management command to trigger sentiment analysis on unprocessed reviews.
 Used by the command palette for quick NLP operations.

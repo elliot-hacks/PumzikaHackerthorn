@@ -1,3 +1,4 @@
+# home/management/commands/generate_insights.py
 """
 Django management command to generate LLM-powered property insights.
 Used by the command palette for quick insight generation.

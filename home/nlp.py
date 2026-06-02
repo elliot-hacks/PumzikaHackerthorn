@@ -19,6 +19,7 @@ so the pipeline never crashes on a single review.
 from __future__ import annotations
 import logging
 import re
+import os
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -412,7 +413,10 @@ class AfriSentiAnalyzer:
 
 
 # Initialize AfriSenti analyzer (lazy loading)
-afrisenti_analyzer = AfriSentiAnalyzer()
+afrisenti_analyzer = AfriSentiAnalyzer(
+    model_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "model.safetensors"),
+    model_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "afrisenti_model"),
+)
 
 
 # ── Topic Extractor ────────────────────────────────────────────────────────

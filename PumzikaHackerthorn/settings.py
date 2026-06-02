@@ -11,7 +11,7 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
     "pumzika.elliothacks.com",
-    "3.126.57.92/",
+    "3.126.57.92",
 ]
 
 

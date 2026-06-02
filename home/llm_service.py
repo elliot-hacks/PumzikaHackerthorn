@@ -1,3 +1,4 @@
+# home/llm_service.py
 """
 Multi-Model LLM Service for sentiment analysis, topic extraction, and insights.
 Distributes load across Groq, Mistral, and OpenRouter for reliability and cost optimization.
