@@ -18,6 +18,7 @@ so the pipeline never crashes on a single review.
 """
 from __future__ import annotations
 import logging
+import json
 import re
 import os
 from typing import Optional
@@ -293,15 +294,15 @@ sentiment_scorer = SentimentScorer()
 
 
 # ── AfriSenti Model-Based Sentiment Analyzer ───────────────────────────────
-# In home/nlp.py - Replace your AfriSentiAnalyzer with this:
 
 class AfriSentiAnalyzer:
     """
     Local AfriSenti transformer model for African language sentiment analysis.
-    Uses ONLY local files - no Hugging Face downloads.
+    Attempts to load from local files first, falls back to HuggingFace Hub
+    if the local model is incomplete or unavailable.
     """
 
-    def __init__(self, model_dir: str = None):
+    def __init__(self, model_dir: str = None, use_huggingface: bool = True):
         self.model = None
         self.tokenizer = None
         self.device = "cpu"
@@ -310,11 +311,13 @@ class AfriSentiAnalyzer:
         self.model_path = os.path.join(self.model_dir, "model.safetensors")
         self.config_path = os.path.join(self.model_dir, "config.json")
         self.tokenizer_path = os.path.join(self.model_dir)  # Tokenizer files should be here
+        self.use_huggingface = use_huggingface
         self._initialized = False
         self._init_failed = False
+        self._model_valid = False  # Track if we have a valid working model
 
     def _load_model(self):
-        """Lazily load the AfriSenti model from local files only."""
+        """Lazily load the AfriSenti model from local files or HuggingFace."""
         if self._initialized or self._init_failed:
             return
 
@@ -322,101 +325,212 @@ class AfriSentiAnalyzer:
             import os
             import json
             
+            # First, try to load from local directory
+            local_success = self._try_load_local()
+            
+            if local_success:
+                # Validate the model by running a quick test
+                if self._validate_model():
+                    self._initialized = True
+                    self._model_valid = True
+                    logger.info("AfriSenti model loaded and validated from local directory: %s", self.model_dir)
+                    return
+                else:
+                    logger.warning("Local AfriSenti model validation failed, model weights may be incomplete")
+            
+            # If local loading failed or validation failed, try HuggingFace
+            if self.use_huggingface:
+                hf_success = self._try_load_huggingface()
+                if hf_success:
+                    self._initialized = True
+                    self._model_valid = True
+                    logger.info("AfriSenti model loaded from HuggingFace Hub")
+                    return
+            
+            # If all else fails, mark as failed
+            logger.warning("AfriSenti model not available - will use lexicon fallback")
+            self._init_failed = True
+
+        except Exception as e:
+            logger.error(f"Failed to load AfriSenti model: {e}", exc_info=True)
+            self._init_failed = True
+
+    def _try_load_local(self) -> bool:
+        """Try to load model from local files. Returns True if successful."""
+        try:
+            import json
+            import torch
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+            from safetensors.torch import load_file
+            
             # Check if model directory exists
             if not os.path.exists(self.model_dir):
                 logger.warning(f"AfriSenti model directory not found: {self.model_dir}")
-                self._init_failed = True
-                return
+                return False
                 
-            # Check for model file
-            if not os.path.exists(self.model_path):
-                logger.warning(f"AfriSenti model not found at {self.model_path}")
-                self._init_failed = True
-                return
-
             # Check for config file
             if not os.path.exists(self.config_path):
                 logger.warning(f"AfriSenti config not found at {self.config_path}")
-                self._init_failed = True
-                return
+                return False
 
-            import torch
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
-            
-            # Load config
+            # Check for tokenizer files
+            tokenizer_files = ['tokenizer.json', 'tokenizer_config.json', 'vocab.txt', 'special_tokens_map.json']
+            has_tokenizer = any(os.path.exists(os.path.join(self.model_dir, f)) for f in tokenizer_files)
+            if not has_tokenizer:
+                logger.warning(f"No tokenizer files found in {self.model_dir}")
+                return False
+
+            # Load config to check model architecture
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
 
-            base_model = config.get('base_model_name', 'bert-base-multilingual-uncased')
-            
-            # IMPORTANT: Load tokenizer from local directory ONLY
-            # Set local_files_only=True to prevent HF downloads
+            # Load tokenizer from local directory ONLY
             try:
                 self.tokenizer = AutoTokenizer.from_pretrained(
-                    self.tokenizer_path,
-                    local_files_only=True,  # ← THIS PREVENTS HF DOWNLOADS
+                    self.model_dir,
+                    local_files_only=True,
                     trust_remote_code=False
                 )
                 logger.info("Tokenizer loaded from local files")
             except Exception as e:
                 logger.error(f"Cannot load tokenizer locally: {e}")
-                logger.error("Make sure you have tokenizer files in: %s", self.tokenizer_path)
-                self._init_failed = True
-                return
+                return False
 
-            # Load model config from local or use default
-            try:
-                model_config = AutoConfig.from_pretrained(
-                    self.tokenizer_path,
-                    local_files_only=True,
-                    num_labels=3,
-                    label2id={"negative": 0, "neutral": 1, "positive": 2},
-                    id2label={0: "negative", 1: "neutral", 2: "positive"},
-                )
-            except Exception:
-                # Fallback to creating config manually
-                model_config = AutoConfig.for_model(
-                    "bert",
-                    num_labels=3,
-                    label2id={"negative": 0, "neutral": 1, "positive": 2},
-                    id2label={0: "negative", 1: "neutral", 2: "positive"},
-                )
+            # Check if we have a complete model in the safetensors file
+            if os.path.exists(self.model_path):
+                state_dict = load_file(self.model_path)
+                num_keys = len(state_dict)
+                
+                # A complete BERT model should have 200+ keys
+                # If we only have a few keys (like just classifier weights), the model is incomplete
+                if num_keys < 50:
+                    logger.warning(
+                        f"AfriSenti model file is incomplete (only {num_keys} keys). "
+                        "A complete BERT model should have 200+ keys. "
+                        "The model needs to be properly exported or downloaded."
+                    )
+                    return False
+                
+                # Load model config
+                try:
+                    model_config = AutoConfig.from_pretrained(
+                        self.model_dir,
+                        local_files_only=True,
+                        num_labels=3,
+                        label2id={"negative": 0, "neutral": 1, "positive": 2},
+                        id2label={0: "negative", 1: "neutral", 2: "positive"},
+                    )
+                except Exception:
+                    model_config = AutoConfig.for_model(
+                        "bert",
+                        num_labels=3,
+                        label2id={"negative": 0, "neutral": 1, "positive": 2},
+                        id2label={0: "negative", 1: "neutral", 2: "positive"},
+                    )
 
-            # Load model from local safetensors file
-            from safetensors.torch import load_file
-            
-            # Create model with random weights first
-            self.model = AutoModelForSequenceClassification.from_config(model_config)
-            
-            # Load the saved weights
-            state_dict = load_file(self.model_path)
-            
-            # Handle potential key mismatches
-            new_state_dict = {}
-            for key, value in state_dict.items():
-                # Remove 'bert.' prefix if needed
-                if key.startswith('bert.'):
-                    new_key = key
-                else:
-                    new_key = f'bert.{key}'
-                new_state_dict[new_key] = value
-            
-            # Load weights
-            missing_keys, unexpected_keys = self.model.load_state_dict(new_state_dict, strict=False)
-            if missing_keys:
-                logger.debug(f"Missing keys: {missing_keys[:5]}...")
-            if unexpected_keys:
-                logger.debug(f"Unexpected keys: {unexpected_keys[:5]}...")
-            
-            self.model.to(self.device)
-            self.model.eval()
-
-            self._initialized = True
-            logger.info("AfriSenti model loaded successfully from local directory: %s", self.model_dir)
+                # Create model and load weights
+                self.model = AutoModelForSequenceClassification.from_config(model_config)
+                
+                # Handle potential key mismatches
+                new_state_dict = {}
+                for key, value in state_dict.items():
+                    new_state_dict[key] = value
+                
+                # Load weights with strict=False to allow some flexibility
+                missing_keys, unexpected_keys = self.model.load_state_dict(new_state_dict, strict=False)
+                if missing_keys and len(missing_keys) > 10:
+                    logger.warning(f"Too many missing keys ({len(missing_keys)}), model may be incomplete")
+                    return False
+                
+                self.model.to(self.device)
+                self.model.eval()
+                logger.info("Model loaded from local safetensors file with %d keys", num_keys)
+                return True
+            else:
+                logger.warning(f"Model safetensors file not found at {self.model_path}")
+                return False
 
         except Exception as e:
-            logger.error(f"Failed to load AfriSenti model: {e}", exc_info=True)
-            self._init_failed = True
+            logger.error(f"Failed to load local AfriSenti model: {e}")
+            return False
+
+    def _try_load_huggingface(self) -> bool:
+        """Try to load model from HuggingFace Hub. Returns True if successful."""
+        try:
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            
+            # Proper AfriSenti sentiment models from HuggingFace
+            # These are specifically trained for sentiment analysis on African languages
+            model_names_to_try = [
+                # AfriSenti v2 models (best for African languages including Swahili)
+                "afrisenti/afrisenti-xlm-roberta-base",
+                "afrisenti/afrisenti-base",
+                # Alternative: XLM-RoBERTa fine-tuned on Swahili sentiment
+                "nlptown/bert-base-multilingual-uncased-sentiment",
+            ]
+            
+            for model_name in model_names_to_try:
+                try:
+                    logger.info(f"Trying to load {model_name} from HuggingFace...")
+                    self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                    self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+                    self.model.to(self.device)
+                    self.model.eval()
+                    logger.info(f"Successfully loaded {model_name} from HuggingFace")
+                    return True
+                except Exception as e:
+                    logger.debug(f"Failed to load {model_name}: {e}")
+                    continue
+            
+            logger.warning("Could not load any AfriSenti model from HuggingFace")
+            return False
+            
+        except ImportError as e:
+            logger.warning(f"Cannot load from HuggingFace: {e}")
+            return False
+
+    def _validate_model(self) -> bool:
+        """Quick validation that the model produces reasonable outputs."""
+        if self.model is None or self.tokenizer is None:
+            return False
+        
+        try:
+            import torch
+            
+            # Test with a clearly negative Swahili sentence
+            test_text = "Hoteli hii ni mbaya sana"  # This hotel is very bad
+            inputs = self.tokenizer(
+                test_text,
+                padding=True,
+                truncation=True,
+                max_length=128,
+                return_tensors="pt",
+            ).to(self.device)
+            
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)[0]
+            
+            # Check that probabilities sum to ~1 and aren't all equal (which would indicate random weights)
+            prob_sum = probabilities.sum().item()
+            prob_max = probabilities.max().item()
+            prob_min = probabilities.min().item()
+            
+            # If all probabilities are nearly equal (~0.33 each for 3 classes), model has random weights
+            if abs(prob_max - prob_min) < 0.1:
+                logger.warning("Model validation failed: outputs are too uniform (random weights?)")
+                return False
+            
+            if abs(prob_sum - 1.0) > 0.1:
+                logger.warning("Model validation failed: probabilities don't sum to 1")
+                return False
+            
+            logger.info("Model validation passed")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Model validation error: {e}")
+            return False
 
     def analyze(self, text: str, language: str = "sw") -> tuple[str, float, str]:
         """
@@ -461,23 +575,60 @@ class AfriSentiAnalyzer:
             label_id = predicted.item()
             score = confidence.item()
 
-            # Map label ID to sentiment
-            id2label = {0: "negative", 1: "neutral", 2: "positive"}  # Default mapping
-            if hasattr(self.model.config, 'id2label'):
-                id2label = self.model.config.id2label
+            # Map label ID to sentiment using model's config
+            label = self._map_label(label_id)
             
-            label = id2label.get(label_id, "neutral")
-            
-            # Ensure label is one of the expected values
-            if label not in ("positive", "negative", "neutral"):
-                label = "neutral"
-
             logger.debug(f"AfriSenti analysis: {label} (score: {score:.4f})")
             return label, round(score, 4), "afrisenti_transformer"
 
         except Exception as e:
             logger.warning(f"AfriSenti inference failed: {e}")
             return "neutral", 0.5, "inference_error"
+
+    def _map_label(self, label_id: int) -> str:
+        """Map model's label ID to sentiment label, handling different model configs."""
+        # Default 3-class mapping (negative, neutral, positive)
+        default_3class = {0: "negative", 1: "neutral", 2: "positive"}
+        
+        # Check if model has id2label in config
+        if hasattr(self.model.config, 'id2label') and self.model.config.id2label:
+            id2label = self.model.config.id2label
+            label_str = id2label.get(str(label_id), id2label.get(label_id, None))
+            
+            if label_str:
+                # Normalize to our expected labels
+                label_lower = label_str.lower()
+                if 'pos' in label_lower:
+                    return "positive"
+                elif 'neg' in label_lower:
+                    return "negative"
+                elif 'neu' in label_lower or 'mid' in label_lower:
+                    return "neutral"
+                # Handle star ratings (1-5 stars)
+                elif 'star' in label_lower:
+                    # 1-2 stars = negative, 3 stars = neutral, 4-5 stars = positive
+                    if '1' in label_str or '2' in label_str:
+                        return "negative"
+                    elif '3' in label_str:
+                        return "neutral"
+                    elif '4' in label_str or '5' in label_str:
+                        return "positive"
+                    else:
+                        return "neutral"
+                # Handle numeric ratings
+                elif label_str.strip().isdigit():
+                    rating = int(label_str.strip())
+                    if rating <= 2:
+                        return "negative"
+                    elif rating <= 3:
+                        return "neutral"
+                    else:
+                        return "positive"
+                else:
+                    return label_lower
+        
+        # Fallback to default 3-class mapping
+        return default_3class.get(label_id, "neutral")
 
 
 # Initialize AfriSenti analyzer with path to your model directory
