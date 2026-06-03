@@ -654,9 +654,9 @@ class NLPAdminSiteMixin:
         }
 
     def _cmd_analyze_sentiment(self, params):
-        from home.tasks import bulk_process_reviews
-        batch = params.get("batch_size", 100)
-        task  = bulk_process_reviews.delay(batch_size=batch)
+        from home.tasks import bulk_process_home
+        batch = params.get("batch_size", 200)
+        task  = bulk_process_home.delay(batch_size=batch)
         return {"success": True, "message": f"Sentiment analysis queued (batch={batch})", "task_id": task.id}
 
     def _cmd_extract_topics(self, params):
