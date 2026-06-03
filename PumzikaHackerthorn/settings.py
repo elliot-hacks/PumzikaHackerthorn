@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'whitenoise.runserver_nostatic',
     'home',
+    'django_celery_beat',
 ]
 
 
@@ -237,4 +238,3 @@ LOGGING = {
         'level': 'ERROR',
     },
 }
-
