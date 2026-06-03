@@ -170,6 +170,34 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
+# Celery Beat Schedule (Periodic Tasks)
+CELERY_BEAT_SCHEDULE = {
+    # Process unprocessed reviews every 15 minutes
+    "process-reviews-every-15min": {
+        "task": "home.tasks.bulk_process_home",
+        "schedule": 900,  # 15 minutes
+        "options": {"queue": "default"},
+    },
+    # Build sentiment snapshots daily at 00:30
+    "build-sentiment-snapshots-daily": {
+        "task": "home.tasks.build_sentiment_snapshots",
+        "schedule": 30 * 60,  # Every 30 minutes for near real-time updates
+        "options": {"queue": "default"},
+    },
+    # Update topic clusters daily at 01:00
+    "update-topic-clusters-daily": {
+        "task": "home.tasks.update_topic_clusters",
+        "schedule": 3600,  # Every hour
+        "options": {"queue": "default"},
+    },
+    # Generate property insights daily at 02:00
+    "generate-insights-daily": {
+        "task": "home.tasks.generate_property_insights",
+        "schedule": 7200,  # Every 2 hours
+        "options": {"queue": "default"},
+    },
+}
+
 
 # Django Unfold Admin Configuration
 UNFOLD = {
