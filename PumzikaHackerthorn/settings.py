@@ -7,6 +7,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DEBUG = True
 
 
+os.environ['HF_HUB_OFFLINE'] = '1'
+os.environ['TRANSFORMERS_OFFLINE'] = '1'
+
+
+AFRISENTI_MODEL_DIR = os.path.join(BASE_DIR, 'afrisenti_model')
+
+
+
+
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
