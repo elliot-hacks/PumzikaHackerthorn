@@ -1,0 +1,259 @@
+{% extends "admin/change_list.html" %}
+{% load i18n static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  /* Dashboard Panel Styles - Dark/Light Theme Support */
+  .dashboard-panel {
+    background: var(--color-background-paper, #fff);
+    border: 1px solid var(--color-border-primary, #e0e0e0);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  
+  .dashboard-panel h2 {
+    color: var(--color-text-primary, #212121);
+    font-size: 18px;
+    margin: 0 0 16px 0;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--color-border-primary, #e0e0e0);
+  }
+  
+  .panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  
+  .panel-stat {
+    background: var(--color-hover, #f5f5f5);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+  }
+  
+  .panel-stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1565c0;
+    margin-bottom: 4px;
+  }
+  
+  .panel-stat-label {
+    font-size: 12px;
+    color: var(--color-text-secondary, #616161);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .panel-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border-primary, #e0e0e0);
+  }
+  
+  .panel-action-btn {
+    background: #1565c0;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .panel-action-btn:hover {
+    background: #0d47a1;
+  }
+  
+  .panel-action-btn.secondary {
+    background: var(--color-hover, #f5f5f5);
+    color: var(--color-text-primary, #212121);
+    border: 1px solid var(--color-border-primary, #e0e0e0);
+  }
+  
+  .panel-action-btn.secondary:hover {
+    background: var(--color-border-primary, #e0e0e0);
+  }
+  
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  
+  .badge-pos { background: #e8f5e9; color: #2e7d32; }
+  .badge-neg { background: #fce4ec; color: #c62828; }
+  .badge-neu { background: #f5f5f5; color: #555; }
+  
+  /* Dark theme adjustments */
+  @media (prefers-color-scheme: dark) {
+    .panel-stat {
+      background: rgba(255,255,255,0.05);
+    }
+  }
+  
+  /* Notification toast */
+  .panel-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    background: #2e7d32;
+    color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 100001;
+    font-size: 14px;
+    animation: slideIn 0.3s ease;
+    display: none;
+  }
+  
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Dashboard Panel -->
+<div class="dashboard-panel">
+  <h2>📊 {{ module_name }} Analytics Dashboard</h2>
+  
+  <div class="panel-grid">
+    <div class="panel-stat">
+      <div class="panel-stat-value">{{ stats.total }}</div>
+      <div class="panel-stat-label">Total Records</div>
+    </div>
+    <div class="panel-stat">
+      <div class="panel-stat-value" style="color: #2e7d32">{{ stats.processed }}</div>
+      <div class="panel-stat-label">Processed</div>
+    </div>
+    <div class="panel-stat">
+      <div class="panel-stat-value" style="color: #4a148c">{{ stats.positive }}</div>
+      <div class="panel-stat-label">
+        <span class="badge badge-pos">Positive</span>
+      </div>
+    </div>
+    <div class="panel-stat">
+      <div class="panel-stat-value" style="color: #c62828">{{ stats.negative }}</div>
+      <div class="panel-stat-label">
+        <span class="badge badge-neg">Negative</span>
+      </div>
+    </div>
+    <div class="panel-stat">
+      <div class="panel-stat-value" style="color: #e65100">{{ stats.neutral }}</div>
+      <div class="panel-stat-label">
+        <span class="badge badge-neu">Neutral</span>
+      </div>
+    </div>
+    {% if stats.swahili is not None %}
+    <div class="panel-stat">
+      <div class="panel-stat-value" style="color: #4a148c">{{ stats.swahili }}</div>
+      <div class="panel-stat-label">Swahili Reviews</div>
+    </div>
+    {% endif %}
+  </div>
+  
+  <div class="panel-actions">
+    <button class="panel-action-btn" onclick="executeCommand('analyze_sentiment')">
+      <span>🤖</span> Analyze Sentiment
+    </button>
+    <button class="panel-action-btn" onclick="executeCommand('extract_topics')">
+      <span>🏷️</span> Extract Topics
+    </button>
+    <button class="panel-action-btn secondary" onclick="refreshPage()">
+      <span>🔄</span> Refresh
+    </button>
+    <a href="{% url 'admin:home_dashboard' %}" class="panel-action-btn secondary">
+      <span>📊</span> Full Dashboard
+    </a>
+    <a href="{% url 'admin:home_documentation' %}" class="panel-action-btn secondary">
+      <span>📚</span> Documentation
+    </a>
+  </div>
+</div>
+
+<!-- Notification Toast -->
+<div id="panelNotification" class="panel-notification"></div>
+
+<!-- Result list (from parent template) -->
+{{ block.super }}
+
+<script>
+// Get CSRF token
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+// Execute NLP command
+function executeCommand(command) {
+  showNotification('⚡ Executing command...', '#1565c0');
+  
+  fetch('/admin/home/api/command-palette/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': getCookie('csrftoken'),
+    },
+    body: JSON.stringify({ command, params: {} }),
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      showNotification(`✅ ${data.message}`, '#2e7d32');
+      if (data.task_id) {
+        setTimeout(() => showNotification(`📋 Task ID: ${data.task_id}`, '#1565c0'), 1000);
+      }
+    } else {
+      showNotification(`❌ Error: ${data.error}`, '#c62828');
+    }
+  })
+  .catch(error => {
+    showNotification(`❌ Network error: ${error.message}`, '#c62828');
+  });
+}
+
+// Show notification
+function showNotification(message, color) {
+  const toast = document.getElementById('panelNotification');
+  toast.textContent = message;
+  toast.style.background = color;
+  toast.style.display = 'block';
+  
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 3000);
+}
+
+// Refresh page
+function refreshPage() {
+  location.reload();
+}
+</script>
+{% endblock %}

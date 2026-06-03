@@ -31,6 +31,26 @@ from home.models import Review, TopicCluster, SentimentSnapshot, PropertyInsight
 # ── Review Admin ───────────────────────────────────────────────────────────
 @admin.register(Review)
 class ReviewAdmin(UnfoldModelAdmin):
+    change_list_template = "admin/home/change_list_with_panel.html"
+    
+    def changelist_view(self, request, extra_context=None):
+        extra = extra_context or {}
+        sent_counts = dict(
+            Review.objects.values("sentiment")
+            .annotate(n=Count("id"))
+            .values_list("sentiment", "n")
+        )
+        extra["module_name"] = "Reviews"
+        extra["stats"] = {
+            "total":     Review.objects.count(),
+            "processed": Review.objects.filter(is_processed=True).count(),
+            "positive":  sent_counts.get("positive", 0),
+            "negative":  sent_counts.get("negative", 0),
+            "neutral":   sent_counts.get("neutral", 0),
+            "swahili":   Review.objects.filter(language="sw").count(),
+        }
+        return super().changelist_view(request, extra_context=extra)
+
     list_display = [
         "property_name",
         "review_date",
@@ -215,6 +235,21 @@ class ReviewAdmin(UnfoldModelAdmin):
 # ── TopicCluster Admin ─────────────────────────────────────────────────────
 @admin.register(TopicCluster)
 class TopicClusterAdmin(UnfoldModelAdmin):
+    change_list_template = "admin/home/change_list_with_panel.html"
+    
+    def changelist_view(self, request, extra_context=None):
+        extra = extra_context or {}
+        total_reviews = Review.objects.filter(is_processed=True).count()
+        extra["module_name"] = "Topic Clusters"
+        extra["stats"] = {
+            "total":     TopicCluster.objects.count(),
+            "processed": TopicCluster.objects.filter(review_count__gt=0).count(),
+            "positive":  TopicCluster.objects.filter(avg_sentiment_score__gte=0.65).count(),
+            "negative":  TopicCluster.objects.filter(avg_sentiment_score__lt=0.40).count(),
+            "neutral":   TopicCluster.objects.filter(avg_sentiment_score__gte=0.40, avg_sentiment_score__lt=0.65).count(),
+        }
+        return super().changelist_view(request, extra_context=extra)
+
     list_display  = [
         "label", "review_count", "sentiment_bar", "keywords_display",
     ]
@@ -252,6 +287,28 @@ class TopicClusterAdmin(UnfoldModelAdmin):
 # ── PropertyInsight Admin ──────────────────────────────────────────────────
 @admin.register(PropertyInsight)
 class PropertyInsightAdmin(UnfoldModelAdmin):
+    change_list_template = "admin/home/change_list_with_panel.html"
+    
+    def changelist_view(self, request, extra_context=None):
+        extra = extra_context or {}
+        total_insights = PropertyInsight.objects.count()
+        # Count insights by sentiment (based on majority of reviews)
+        pos_count = PropertyInsight.objects.filter(
+            sentiment_breakdown__positive__gt=0
+        ).count()
+        neg_count = PropertyInsight.objects.filter(
+            sentiment_breakdown__negative__gt=0
+        ).count()
+        extra["module_name"] = "Property Insights"
+        extra["stats"] = {
+            "total":     total_insights,
+            "processed": PropertyInsight.objects.filter(generated_at__isnull=False).count(),
+            "positive":  pos_count,
+            "negative":  neg_count,
+            "neutral":   total_insights - pos_count - neg_count,
+        }
+        return super().changelist_view(request, extra_context=extra)
+
     list_display  = [
         "property_name", "total_home", "avg_reviewer_score",
         "sentiment_breakdown_display", "swahili_feedback_count",
@@ -323,6 +380,25 @@ class PropertyInsightAdmin(UnfoldModelAdmin):
 # ── SentimentSnapshot Admin ────────────────────────────────────────────────
 @admin.register(SentimentSnapshot)
 class SentimentSnapshotAdmin(UnfoldModelAdmin):
+    change_list_template = "admin/home/change_list_with_panel.html"
+    
+    def changelist_view(self, request, extra_context=None):
+        extra = extra_context or {}
+        total_snapshots = SentimentSnapshot.objects.count()
+        # Count snapshots by positive percentage
+        pos_count = SentimentSnapshot.objects.filter(positive_pct__gte=70).count()
+        neg_count = SentimentSnapshot.objects.filter(positive_pct__lt=50).count()
+        neu_count = total_snapshots - pos_count - neg_count
+        extra["module_name"] = "Sentiment Snapshots"
+        extra["stats"] = {
+            "total":     total_snapshots,
+            "processed": total_snapshots,  # All snapshots are processed
+            "positive":  pos_count,
+            "negative":  neg_count,
+            "neutral":   neu_count,
+        }
+        return super().changelist_view(request, extra_context=extra)
+
     list_display = [
         "property_name", "snapshot_date", "total_home",
         "positive_pct_display", "avg_score",

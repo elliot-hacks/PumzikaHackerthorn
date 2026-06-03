@@ -47,11 +47,11 @@ class HomeConfig(AppConfig):
             pass
 
     def _register_admin_urls(self):
-        """Inject the dashboard URL into the admin site."""
+        """Inject the dashboard and documentation URLs into the admin site."""
         try:
             from django.contrib import admin as dj_admin
             from django.urls import path
-            from home.admin import ReviewDashboardAdmin
+            from home.admin import ReviewDashboardAdmin, DocumentationView
 
             original_get_urls = dj_admin.site.__class__.get_urls
 
@@ -61,7 +61,12 @@ class HomeConfig(AppConfig):
                         "home/dashboard/",
                         dj_admin.site.admin_view(ReviewDashboardAdmin.view),
                         name="home_dashboard",
-                    )
+                    ),
+                    path(
+                        "home/documentation/",
+                        dj_admin.site.admin_view(DocumentationView.view),
+                        name="home_documentation",
+                    ),
                 ]
                 return custom + original_get_urls(self_inner)
 
