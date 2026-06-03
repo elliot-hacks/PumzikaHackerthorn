@@ -343,6 +343,20 @@ class SentimentSnapshotAdmin(UnfoldModelAdmin):
     positive_pct_display.short_description = "Positive %"
 
 
+# ── Documentation View ─────────────────────────────────────────────────────
+class DocumentationView:
+    """
+    Standalone admin view that renders the documentation page.
+    """
+    
+    @staticmethod
+    def view(request):
+        return render(request, "admin/home/documentation.html", {
+            **admin.site.each_context(request),
+            "title": "NLP Documentation",
+        })
+
+
 # ── Custom Dashboard View ──────────────────────────────────────────────────
 class ReviewDashboardAdmin:
     """

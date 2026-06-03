@@ -1,0 +1,372 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}NLP Documentation - Pumzika Hackerthorn{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  /* Documentation Styles - Dark/Light Theme Support */
+  .doc-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  
+  .doc-header {
+    background: linear-gradient(135deg, #1565c0 0%, #4a148c 100%);
+    color: #fff;
+    padding: 32px;
+    border-radius: 12px;
+    margin-bottom: 32px;
+  }
+  
+  .doc-header h1 {
+    margin: 0 0 8px 0;
+    font-size: 28px;
+    font-weight: 700;
+  }
+  
+  .doc-header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 16px;
+  }
+  
+  .doc-section {
+    background: var(--color-background-paper, #fff);
+    border: 1px solid var(--color-border-primary, #e0e0e0);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  
+  .doc-section h2 {
+    color: var(--color-text-primary, #212121);
+    font-size: 20px;
+    margin: 0 0 16px 0;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--color-border-primary, #e0e0e0);
+  }
+  
+  .doc-section h3 {
+    color: var(--color-text-primary, #212121);
+    font-size: 16px;
+    margin: 16px 0 8px 0;
+  }
+  
+  .doc-section p, .doc-section li {
+    color: var(--color-text-secondary, #616161);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  
+  .doc-section ul {
+    padding-left: 20px;
+  }
+  
+  .doc-section code {
+    background: var(--color-hover, #f5f5f5);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #c62828;
+  }
+  
+  .doc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  
+  .doc-card {
+    background: var(--color-hover, #f5f5f5);
+    border-radius: 8px;
+    padding: 16px;
+    border-left: 4px solid #1565c0;
+  }
+  
+  .doc-card h4 {
+    margin: 0 0 8px 0;
+    color: #1565c0;
+    font-size: 14px;
+  }
+  
+  .doc-card p {
+    margin: 0;
+    font-size: 13px;
+  }
+  
+  .feature-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 4px;
+  }
+  
+  .badge-blue { background: #e3f2fd; color: #1565c0; }
+  .badge-green { background: #e8f5e9; color: #2e7d32; }
+  .badge-purple { background: #ede7f6; color: #4a148c; }
+  .badge-amber { background: #fff8e1; color: #e65100; }
+  
+  .quick-links {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+  }
+  
+  .quick-link {
+    background: #1565c0;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.2s ease;
+  }
+  
+  .quick-link:hover {
+    background: #0d47a1;
+    color: #fff;
+  }
+  
+  .model-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+  }
+  
+  .model-table th, .model-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border-primary, #e0e0e0);
+  }
+  
+  .model-table th {
+    background: var(--color-hover, #f5f5f5);
+    font-weight: 600;
+    color: var(--color-text-primary, #212121);
+  }
+  
+  .model-table td {
+    color: var(--color-text-secondary, #616161);
+    font-size: 13px;
+  }
+  
+  /* Dark theme adjustments */
+  @media (prefers-color-scheme: dark) {
+    .doc-card {
+      background: rgba(255,255,255,0.05);
+    }
+    .model-table th {
+      background: rgba(255,255,255,0.05);
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="doc-container">
+  <!-- Header -->
+  <div class="doc-header">
+    <h1>📚 NLP Review Analytics Documentation</h1>
+    <p>Complete guide to using the Pumzika Hackerthorn sentiment analysis platform</p>
+  </div>
+
+  <!-- Quick Links -->
+  <div class="doc-section">
+    <h2>🚀 Quick Navigation</h2>
+    <div class="quick-links">
+      <a href="#overview" class="quick-link">Overview</a>
+      <a href="#features" class="quick-link">Features</a>
+      <a href="#models" class="quick-link">Data Models</a>
+      <a href="#nlp-pipeline" class="quick-link">NLP Pipeline</a>
+      <a href="#commands" class="quick-link">Commands</a>
+      <a href="#api" class="quick-link">API Reference</a>
+      <a href="{% url 'admin:home_dashboard' %}" class="quick-link">📊 Dashboard</a>
+    </div>
+  </div>
+
+  <!-- Overview -->
+  <div class="doc-section" id="overview">
+    <h2>📋 Overview</h2>
+    <p>
+      Pumzika Hackerthorn is an AI-powered review analytics platform designed specifically for the East African hospitality market. 
+      It automatically analyzes guest reviews to extract sentiment, topics, and actionable insights using a sophisticated hybrid approach.
+    </p>
+    
+    <div class="doc-grid">
+      <div class="doc-card">
+        <h4>🌍 Multilingual Support</h4>
+        <p>Full sentiment analysis for Swahili and English reviews with code-switching detection</p>
+      </div>
+      <div class="doc-card">
+        <h4>🤖 AI-Powered</h4>
+        <p>AfriSenti transformer model + LLM integration for accurate sentiment analysis</p>
+      </div>
+      <div class="doc-card">
+        <h4>📊 Real-Time Analytics</h4>
+        <p>Live dashboards with Chart.js visualizations and instant query responses</p>
+      </div>
+      <div class="doc-card">
+        <h4>💡 Actionable Insights</h4>
+        <p>AI-generated narratives with strengths, weaknesses, and recommendations</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <div class="doc-section" id="features">
+    <h2>✨ Key Features</h2>
+    <div>
+      <span class="feature-badge badge-blue">Sentiment Analysis</span>
+      <span class="feature-badge badge-green">Topic Extraction</span>
+      <span class="feature-badge badge-purple">Aspect Scoring</span>
+      <span class="feature-badge badge-amber">Swahili NLP</span>
+      <span class="feature-badge badge-blue">Command Palette</span>
+      <span class="feature-badge badge-green">AI Insights</span>
+      <span class="feature-badge badge-purple">Batch Processing</span>
+      <span class="feature-badge badge-amber">Celery Tasks</span>
+    </div>
+    
+    <h3>Core Capabilities</h3>
+    <ul>
+      <li><strong>Sentiment Classification:</strong> Positive, Negative, Neutral with confidence scores (0.0-1.0)</li>
+      <li><strong>Language Detection:</strong> Automatic detection of English, Swahili, or mixed language reviews</li>
+      <li><strong>Topic Extraction:</strong> 13 canonical hospitality topics (Cleanliness, Staff, Location, etc.)</li>
+      <li><strong>Aspect Scoring:</strong> 8 hospitality aspects scored from 0% to 100%</li>
+      <li><strong>Key Phrase Extraction:</strong> Important phrases and quotes from reviews</li>
+      <li><strong>AI Narratives:</strong> Generated summaries with strengths, weaknesses, and actionable advice</li>
+    </ul>
+  </div>
+
+  <!-- Data Models -->
+  <div class="doc-section" id="models">
+    <h2>🗃️ Data Models</h2>
+    <table class="model-table">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Description</th>
+          <th>Key Fields</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Review</strong></td>
+          <td>Individual guest reviews with NLP analysis results</td>
+          <td>sentiment, sentiment_score, topic_labels, aspect_scores, language</td>
+        </tr>
+        <tr>
+          <td><strong>TopicCluster</strong></td>
+          <td>Discovered topic clusters with statistics</td>
+          <td>label, review_count, avg_sentiment_score, keywords</td>
+        </tr>
+        <tr>
+          <td><strong>SentimentSnapshot</strong></td>
+          <td>Daily aggregate sentiment per property</td>
+          <td>property_id, snapshot_date, positive_count, avg_sentiment</td>
+        </tr>
+        <tr>
+          <td><strong>PropertyInsight</strong></td>
+          <td>AI-generated narrative insights for properties</td>
+          <td>strength_summary, weakness_summary, actionable_advice, overall_narrative</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- NLP Pipeline -->
+  <div class="doc-section" id="nlp-pipeline">
+    <h2>⚙️ NLP Pipeline</h2>
+    <p>The platform uses a sophisticated multi-stage pipeline:</p>
+    
+    <h3>1. Language Detection</h3>
+    <p>Uses Swahili marker words and langdetect to identify review language (EN/SW/Other)</p>
+    
+    <h3>2. Sentiment Scoring</h3>
+    <ul>
+      <li><strong>Swahili:</strong> AfriSenti transformer model with lexicon fallback</li>
+      <li><strong>English:</strong> Heuristic keyword matching (batch) or LLM (on-demand)</li>
+      <li><strong>Fallback:</strong> Reviewer score (1-10) as strong signal</li>
+    </ul>
+    
+    <h3>3. Topic Extraction</h3>
+    <p>Maps review content to 13 canonical hospitality topics using keyword matching and LLM</p>
+    
+    <h3>4. Aspect Scoring</h3>
+    <p>Scores 8 aspects (cleanliness, staff, location, value, amenities, wifi, food, noise) from 0-100%</p>
+  </div>
+
+  <!-- Management Commands -->
+  <div class="doc-section" id="commands">
+    <h2>🛠️ Management Commands</h2>
+    
+    <h3>Data Ingestion</h3>
+    <ul>
+      <li><code>python manage.py ingest_kaggle --csv-path /path/to/data.csv</code> - Import Kaggle reviews</li>
+      <li><code>python manage.py ingest_afrisenti --file-path /path/to/data.tsv</code> - Import AfriSenti data</li>
+    </ul>
+    
+    <h3>NLP Processing</h3>
+    <ul>
+      <li><code>python manage.py analyze_sentiment --batch-size 200</code> - Process unprocessed reviews</li>
+      <li><code>python manage.py extract_topics --update-clusters</code> - Extract topics from reviews</li>
+      <li><code>python manage.py generate_insights --all</code> - Generate AI insights for properties</li>
+      <li><code>python manage.py build_snapshots --all</code> - Build daily sentiment snapshots</li>
+    </ul>
+    
+    <h3>Testing & Status</h3>
+    <ul>
+      <li><code>python manage.py test_afrisenti --text "Hoteli hii ni nzuri" --language sw</code></li>
+      <li><code>python manage.py nlp_status</code> - Show system status and statistics</li>
+    </ul>
+  </div>
+
+  <!-- API Reference -->
+  <div class="doc-section" id="api">
+    <h2>🔌 API Reference</h2>
+    
+    <h3>Command Palette API</h3>
+    <p><code>POST /admin/home/api/command-palette/</code></p>
+    <pre style="background: var(--color-hover, #f5f5f5); padding: 12px; border-radius: 8px; overflow-x: auto;">
+{
+  "command": "analyze_sentiment",
+  "params": { "batch_size": 100 }
+}</pre>
+    
+    <h3>Chat API</h3>
+    <p><code>POST /admin/home/api/chat/</code></p>
+    <pre style="background: var(--color-hover, #f5f5f5); padding: 12px; border-radius: 8px; overflow-x: auto;">
+{
+  "query": "Best hotels for cleanliness",
+  "history": []
+}</pre>
+    
+    <h3>Available Commands</h3>
+    <ul>
+      <li><code>get_status</code> - Get system status</li>
+      <li><code>analyze_sentiment</code> - Queue sentiment analysis</li>
+      <li><code>extract_topics</code> - Extract topics from reviews</li>
+      <li><code>generate_insights</code> - Generate property insights</li>
+      <li><code>update_clusters</code> - Update topic clusters</li>
+      <li><code>build_snapshots</code> - Build sentiment snapshots</li>
+    </ul>
+  </div>
+
+  <!-- Footer -->
+  <div class="doc-section" style="text-align: center; padding: 32px;">
+    <p style="margin: 0; color: var(--color-text-secondary, #616161);">
+      Built with ❤️ for East African hospitality analytics<br>
+      <small>Pumzika Hackerthorn v1.0 | June 2026</small>
+    </p>
+  </div>
+</div>
+{% endblock %}
