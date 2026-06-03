@@ -498,23 +498,31 @@ class ReviewDashboardAdmin:
         for asp in Review.objects.filter(is_processed=True).values_list("aspect_scores", flat=True).iterator():
             if asp:
                 for k, v in asp.items():
-                    aspect_all.setdefault(k, []).append(v)
-        aspect_avgs = {
-            k: round(statistics.mean(v) * 100)
-            for k, v in aspect_all.items() if v
-        }
+                    if v is not None:
+                        aspect_all.setdefault(k, []).append(float(v))
+        aspect_avgs = {}
+        for k, v in aspect_all.items():
+            if v:
+                try:
+                    aspect_avgs[k] = round(statistics.mean(v) * 100)
+                except:
+                    aspect_avgs[k] = 0
+
+        # Get property insights count
+        property_insights_count = PropertyInsight.objects.count()
 
         context = {
             **admin.site.each_context(request),
-            "title":          "Review Sentiment Dashboard",
-            "sent_counts":    sent_counts,
-            "timeline":       timeline,
-            "top_topics":     top_topics,
-            "problem_props":  problem_props,
-            "lang_counts":    lang_counts,
-            "aspect_avgs":    aspect_avgs,
-            "total_home":  Review.objects.count(),
-            "processed":      Review.objects.filter(is_processed=True).count(),
+            "title":             "Review Sentiment Dashboard",
+            "sent_counts":       sent_counts,
+            "timeline":          timeline,
+            "top_topics":        top_topics,
+            "problem_props":     problem_props,
+            "lang_counts":       lang_counts,
+            "aspect_avgs":       aspect_avgs,
+            "total_home":        Review.objects.count(),
+            "processed":         Review.objects.filter(is_processed=True).count(),
+            "property_insights": property_insights_count,
         }
         return render(request, "admin/home/dashboard.html", context)
     

@@ -6,315 +6,224 @@
 
 {% block extrahead %}
 {{ block.super }}
-<!-- Command Palette Styles -->
 <style>
-  /* Command Palette Button */
+  /* ── Command Palette Button ─────────────────────────────────────────── */
   .cmd-palette-btn {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
+    position: fixed; bottom: 24px; right: 24px;
+    width: 56px; height: 56px; border-radius: 50%;
     background: linear-gradient(135deg, #1565c0 0%, #4a148c 100%);
-    color: #fff;
-    border: none;
-    box-shadow: 0 4px 20px rgba(21, 101, 192, 0.4);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    z-index: 99998;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    color: #fff; border: none;
+    box-shadow: 0 4px 20px rgba(21,101,192,0.4);
+    cursor: pointer; display: flex; align-items: center;
+    justify-content: center; font-size: 24px;
+    z-index: 99998; transition: transform .2s ease, box-shadow .2s ease;
   }
-  .cmd-palette-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 6px 30px rgba(21, 101, 192, 0.6);
-  }
-  .cmd-palette-btn:active {
-    transform: scale(0.95);
-  }
-  
-  /* Status Bar */
+  .cmd-palette-btn:hover { transform: scale(1.1); box-shadow: 0 6px 30px rgba(21,101,192,0.6); }
+  .cmd-palette-btn:active { transform: scale(0.95); }
+
+  /* ── Status Bar ─────────────────────────────────────────────────────── */
   .nlp-status-bar {
-    background: linear-gradient(90deg, #1565c0 0%, #4a148c 100%);
-    color: #fff;
-    padding: 12px 20px;
-    border-radius: 8px;
-    margin-bottom: 24px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 13px;
+    background: linear-gradient(90deg,#1565c0 0%,#4a148c 100%);
+    color:#fff; padding:12px 20px; border-radius:8px;
+    margin-bottom:24px; display:flex; justify-content:space-between;
+    align-items:center; font-size:13px;
   }
-  .nlp-status-bar .status-left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-  .nlp-status-bar .status-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .nlp-status-bar .status-badge {
-    background: rgba(255,255,255,0.2);
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-weight: 600;
-  }
-  .nlp-status-bar .status-right {
-    font-size: 11px;
-    opacity: 0.8;
-  }
-  
-  /* Quick Actions Bar */
-  .quick-actions {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 24px;
-    flex-wrap: wrap;
-  }
+  .nlp-status-bar .status-left  { display:flex; align-items:center; gap:16px; }
+  .nlp-status-bar .status-item  { display:flex; align-items:center; gap:6px; }
+  .nlp-status-bar .status-badge { background:rgba(255,255,255,.2); padding:2px 8px; border-radius:10px; font-weight:600; }
+  .nlp-status-bar .status-right { font-size:11px; opacity:.8; }
+
+  /* ── Quick Actions ──────────────────────────────────────────────────── */
+  .quick-actions { display:flex; gap:8px; margin-bottom:24px; flex-wrap:wrap; }
   .quick-action-btn {
-    background: var(--color-background-paper, #fff);
-    border: 1px solid var(--color-border-primary, #e0e0e0);
-    border-radius: 8px;
-    padding: 8px 16px;
-    cursor: pointer;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: all 0.2s ease;
+    background:var(--color-background-paper,#fff);
+    border:1px solid var(--color-border-primary,#e0e0e0);
+    border-radius:8px; padding:8px 16px; cursor:pointer; font-size:13px;
+    display:flex; align-items:center; gap:6px; transition:all .2s ease;
+    color: var(--color-text-primary, #222);
   }
   .quick-action-btn:hover {
-    background: var(--color-hover, #f5f5f5);
-    border-color: #1565c0;
-    transform: translateY(-1px);
+    background:var(--color-hover,#f5f5f5);
+    border-color:#1565c0; transform:translateY(-1px);
   }
-  .quick-action-btn.primary {
-    background: #1565c0;
-    color: #fff;
-    border-color: #1565c0;
+  .quick-action-btn.primary { background:#1565c0; color:#fff; border-color:#1565c0; }
+  .quick-action-btn.primary:hover { background:#0d47a1; }
+
+  /* ── Cards ──────────────────────────────────────────────────────────── */
+  .dash-grid  { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px; }
+  .kpi-card   {
+    background:var(--color-background-paper,#fff);
+    border:1px solid var(--color-border-primary,#e0e0e0);
+    border-radius:12px; padding:20px;
   }
-  .quick-action-btn.primary:hover {
-    background: #0d47a1;
+  .kpi-value  { font-size:36px; font-weight:700; margin:4px 0; }
+  .kpi-label  {
+    font-size:12px;
+    color:var(--color-text-primary,#222);   /* ← was #666, invisible in dark */
+    text-transform:uppercase; letter-spacing:.5px;
   }
+  .kpi-sub    { font-size:11px; color:var(--color-text-secondary,#888); margin-top:4px; }
+
+  .chart-card {
+    background:var(--color-background-paper,#fff);
+    border:1px solid var(--color-border-primary,#e0e0e0);
+    border-radius:12px; padding:20px; margin-bottom:20px;
+  }
+  .chart-title {
+    font-size:15px; font-weight:600; margin-bottom:16px;
+    color:var(--color-text-primary,#222);   /* ← explicit; inherits dark color */
+  }
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media(max-width:768px){ .two-col{ grid-template-columns:1fr; } }
+
+  /* ── Toast animations ───────────────────────────────────────────────── */
+  @keyframes slideIn  { from{ opacity:0; transform:translateY(20px); } to{ opacity:1; transform:translateY(0); } }
+  @keyframes slideOut { from{ opacity:1; transform:translateY(0); } to{ opacity:0; transform:translateY(20px); } }
 </style>
 {% endblock %}
 
 {% block content %}
+
 <!-- NLP Status Bar -->
 <div class="nlp-status-bar">
   <div class="status-left">
     <div class="status-item">
-      <span>📊</span>
-      <span>Processed:</span>
-      <span class="status-badge">{{ processed|default:0 }}/{{ total_reviews|default:0 }}</span>
+      <span>📊</span><span>Processed:</span>
+      <span class="status-badge">{{ processed|default:0 }}/{{ total_home|default:0 }}</span>
     </div>
     <div class="status-item">
-      <span>🌍</span>
-      <span>Swahili:</span>
+      <span>🌍</span><span>Swahili:</span>
       <span class="status-badge">{{ lang_counts.sw|default:0 }}</span>
     </div>
     <div class="status-item">
-      <span>🏷️</span>
-      <span>Topics:</span>
+      <span>🏷️</span><span>Topics:</span>
       <span class="status-badge">{{ top_topics|length|default:0 }}</span>
     </div>
     <div class="status-item">
-      <span>💡</span>
-      <span>Insights:</span>
-      <span class="status-badge">{{ command_stats.property_insights|default:0 }}</span>
+      <span>💡</span><span>Insights:</span>
+      <span class="status-badge">{{ property_insights|default:0 }}</span>
     </div>
   </div>
   <div class="status-right">
-    Press <kbd style="background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:4px;">Ctrl+K</kbd> for commands
+    Press <kbd style="background:rgba(255,255,255,.2);padding:2px 6px;border-radius:4px;">Ctrl+K</kbd> for Command Palette
   </div>
 </div>
 
 <!-- Quick Actions -->
 <div class="quick-actions">
-  <button class="quick-action-btn primary" onclick="executeNLPCommand('analyze_sentiment')">
-    <span>🤖</span> Analyze Sentiment
-  </button>
-  <button class="quick-action-btn" onclick="executeNLPCommand('extract_topics')">
-    <span>🏷️</span> Extract Topics
-  </button>
-  <button class="quick-action-btn" onclick="executeNLPCommand('generate_insights')">
-    <span>💡</span> Generate Insights
-  </button>
-  <button class="quick-action-btn" onclick="executeNLPCommand('update_clusters')">
-    <span>🔄</span> Update Clusters
-  </button>
-  <button class="quick-action-btn" onclick="refreshStatus()">
-    <span>🔄</span> Refresh
-  </button>
+  <button class="quick-action-btn primary" onclick="executeNLPCommand('analyze_sentiment')">🤖 Analyze Sentiment</button>
+  <button class="quick-action-btn"         onclick="executeNLPCommand('extract_topics')">🏷️ Extract Topics</button>
+  <button class="quick-action-btn"         onclick="executeNLPCommand('generate_insights')">💡 Generate Insights</button>
+  <button class="quick-action-btn"         onclick="executeNLPCommand('update_clusters')">🔄 Update Clusters</button>
+  <button class="quick-action-btn"         onclick="location.reload()">🔄 Refresh</button>
 </div>
-<style>
-  .dash-grid   { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-bottom:24px }
-  .kpi-card    { background:var(--color-background-paper,#fff); border:1px solid var(--color-border-primary,#e0e0e0); border-radius:12px; padding:20px }
-  .kpi-value   { font-size:36px; font-weight:700; margin:4px 0 }
-  .kpi-label   { font-size:12px; color:var(--color-text-secondary,#666); text-transform:uppercase; letter-spacing:.5px }
-  .chart-card  { background:var(--color-background-paper,#fff); border:1px solid var(--color-border-primary,#e0e0e0); border-radius:12px; padding:20px; margin-bottom:20px }
-  .chart-title { font-size:15px; font-weight:600; margin-bottom:16px }
-  .two-col     { display:grid; grid-template-columns:1fr 1fr; gap:16px }
-  .badge       { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600 }
-  .badge-pos   { background:#e8f5e9; color:#2e7d32 }
-  .badge-neg   { background:#fce4ec; color:#c62828 }
-  .badge-neu   { background:#f5f5f5; color:#555 }
-  @media(max-width:768px){ .two-col{ grid-template-columns:1fr } }
-</style>
 
 <!-- KPI Row -->
 <div class="dash-grid">
   <div class="kpi-card">
-    <div class="kpi-label">Total home</div>
+    <div class="kpi-label">Total Reviews</div>
     <div class="kpi-value" style="color:#1565c0">{{ total_home|default:0 }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Processed</div>
     <div class="kpi-value" style="color:#2e7d32">{{ processed|default:0 }}</div>
-    <div style="font-size:11px;color:#888">{{ processed|default:0 }} / {{ total_home|default:1 }} analysed</div>
+    <div class="kpi-sub">{{ processed|default:0 }} / {{ total_home|default:1 }} analysed</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Positive home</div>
+    <div class="kpi-label">Positive Reviews</div>
     <div class="kpi-value" style="color:#2e7d32">{{ sent_counts.positive|default:0 }}</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Negative home</div>
+    <div class="kpi-label">Negative Reviews</div>
     <div class="kpi-value" style="color:#c62828">{{ sent_counts.negative|default:0 }}</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Swahili home</div>
+    <div class="kpi-label">Swahili Reviews</div>
     <div class="kpi-value" style="color:#4a148c">{{ lang_counts.sw|default:0 }}</div>
-    <div style="font-size:11px;color:#888">East African context</div>
+    <div class="kpi-sub">East African context</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Neutral Reviews</div>
+    <div class="kpi-value" style="color:#757575">{{ sent_counts.neutral|default:0 }}</div>
   </div>
 </div>
 
 <div class="two-col">
-  <!-- Sentiment Donut -->
   <div class="chart-card">
     <div class="chart-title">Overall Sentiment Distribution</div>
     <canvas id="sentimentDonut" height="220"></canvas>
   </div>
-
-  <!-- Language Breakdown -->
   <div class="chart-card">
     <div class="chart-title">Language Breakdown</div>
     <canvas id="langChart" height="220"></canvas>
   </div>
 </div>
 
-<!-- Sentiment Timeline -->
 <div class="chart-card">
   <div class="chart-title">Sentiment Trend (last 90 days)</div>
   <canvas id="timelineChart" height="120"></canvas>
 </div>
 
 <div class="two-col">
-  <!-- Top Topics -->
   <div class="chart-card">
     <div class="chart-title">Top Topics by Volume</div>
     <canvas id="topicsChart" height="260"></canvas>
   </div>
-
-  <!-- Aspect Scores -->
   <div class="chart-card">
     <div class="chart-title">Aspect Satisfaction Scores</div>
     <canvas id="aspectChart" height="260"></canvas>
   </div>
 </div>
 
-<!-- Problem Properties -->
 <div class="chart-card">
-  <div class="chart-title">Properties with Most Negative home</div>
+  <div class="chart-title">Properties with Most Negative Reviews</div>
   <canvas id="problemProps" height="120"></canvas>
 </div>
 
-<!-- Command Palette JS -->
+<!-- Command Palette -->
 <script src="{% static 'home/js/command-palette.js' %}"></script>
 
-<!-- NLP Dashboard Helper Functions -->
+<!-- NLP helpers -->
 <script>
-// Execute NLP command via API
-function executeNLPCommand(command, params = {}) {
-  showNLPNotification('⚡ Executing command...', 'info');
-  
-  fetch('/home/api/command-palette/', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-    body: JSON.stringify({ command, params }),
+function executeNLPCommand(command, params={}) {
+  showNLPNotification('⚡ Executing command…', 'info');
+  fetch('/admin/home/api/command-palette/', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+    body:JSON.stringify({command,params}),
   })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      showNLPNotification(`✅ ${data.message}`, 'success');
-      if (data.task_id) {
-        showNLPNotification(`📋 Task ID: ${data.task_id}`, 'info');
-      }
-      setTimeout(() => refreshStatus(), 1000);
+  .then(r=>r.json())
+  .then(data=>{
+    if(data.success){
+      showNLPNotification(`✅ ${data.message}`,'success');
+      if(data.task_id) showNLPNotification(`📋 Task ID: ${data.task_id}`,'info');
+      setTimeout(()=>location.reload(),1000);
     } else {
-      showNLPNotification(`❌ Error: ${data.error}`, 'error');
+      showNLPNotification(`❌ Error: ${data.error}`,'error');
     }
   })
-  .catch(error => {
-    showNLPNotification(`❌ Network error: ${error.message}`, 'error');
-  });
+  .catch(e=>showNLPNotification(`❌ Network error: ${e.message}`,'error'));
 }
 
-// Refresh dashboard status
-function refreshStatus() {
-  location.reload();
+function showNLPNotification(message, type='info') {
+  const bg = type==='success'?'#2e7d32':type==='error'?'#c62828':'#1565c0';
+  const el = document.createElement('div');
+  el.style.cssText=`position:fixed;bottom:24px;right:90px;padding:12px 20px;
+    background:${bg};color:#fff;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.2);
+    z-index:100001;font-size:14px;max-width:400px;animation:slideIn .3s ease;`;
+  el.textContent=message;
+  document.body.appendChild(el);
+  setTimeout(()=>{el.style.animation='slideOut .3s ease';setTimeout(()=>el.remove(),300);},3000);
 }
 
-// Show notification toast
-function showNLPNotification(message, type = 'info') {
-  const toast = document.createElement('div');
-  toast.style.cssText = `
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    padding: 12px 20px;
-    background: ${type === 'success' ? '#2e7d32' : type === 'error' ? '#c62828' : '#1565c0'};
-    color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    z-index: 100001;
-    font-size: 14px;
-    max-width: 400px;
-    animation: slideIn 0.3s ease;
-  `;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  
-  setTimeout(() => {
-    toast.style.animation = 'slideOut 0.3s ease';
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
-}
-
-// Get CSRF token
 function getCookie(name) {
-  let cookieValue = null;
-  if (document.cookie && document.cookie !== '') {
-    const cookies = document.cookie.split(';');
-    for (let i = 0; i < cookies.length; i++) {
-      const cookie = cookies[i].trim();
-      if (cookie.substring(0, name.length + 1) === (name + '=')) {
-        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-        break;
-      }
-    }
-  }
-  return cookieValue;
+  if(!document.cookie) return null;
+  const c=document.cookie.split(';').find(c=>c.trim().startsWith(name+'='));
+  return c?decodeURIComponent(c.trim().split('=')[1]):null;
 }
 </script>
 
+<!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 // ── Data from Django context ──────────────────────────────────────────────
@@ -329,7 +238,7 @@ const langData = {
   other: {{ lang_counts.other|default:0 }},
 };
 const timeline = [{% for t in timeline %}
-  { day:"{{ t.day }}", pos:{{ t.pos }}, neg:{{ t.neg }} },
+  { day:"{{ t.day|date:'Y-m-d' }}", pos:{{ t.pos }}, neg:{{ t.neg }} },
 {% endfor %}];
 const topTopics = [{% for t in top_topics %}
   { label:"{{ t.label|truncatechars:20 }}", count:{{ t.review_count }}, sent:{{ t.avg_sentiment_score }} },
@@ -337,112 +246,237 @@ const topTopics = [{% for t in top_topics %}
 const problemProps = [{% for p in problem_props %}
   { name:"{{ p.property_name|truncatechars:25 }}", neg:{{ p.neg_count }} },
 {% endfor %}];
-const aspectAvgs = {{ aspect_avgs|safe }};
+const aspectAvgs = {{ aspect_avgs|safe|default:"{}" }};
 
-const COLORS = {
-  pos: "#2e7d32", neg: "#c62828", neu: "#9e9e9e",
-  blue: "#1565c0", purple: "#4a148c", amber: "#e65100",
+// ── Dark-theme colour helper ──────────────────────────────────────────────
+// Reads the CSS variables that Unfold / Django admin sets for dark mode.
+// Falls back to light-mode sensible defaults.
+function cssVar(name, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+function chartTextColor()   { return cssVar('--color-text-primary',   '#222222'); }
+function chartGridColor()   { return cssVar('--color-border-primary', '#e0e0e0'); }
+function chartBgColor()     { return cssVar('--color-background-paper','#ffffff'); }
+
+// ── Global Chart.js defaults (applied once before any chart is created) ──
+Chart.defaults.color          = chartTextColor();   // legend, tick, axis labels
+Chart.defaults.borderColor    = chartGridColor();   // grid lines
+Chart.defaults.backgroundColor = chartBgColor();
+
+// ── Palette ───────────────────────────────────────────────────────────────
+const C = {
+  pos:    '#2e7d32',
+  neg:    '#c62828',
+  neu:    '#9e9e9e',
+  blue:   '#1565c0',
+  purple: '#4a148c',
+  amber:  '#e65100',
 };
 
-// ── Sentiment Donut ───────────────────────────────────────────────────────
-new Chart(document.getElementById("sentimentDonut"), {
-  type: "doughnut",
+// ── Shared axis / legend plugin config (dark-theme safe) ─────────────────
+function legendOpts(position='bottom') {
+  return {
+    position,
+    labels: {
+      color:     chartTextColor(),
+      padding:   16,
+      usePointStyle: true,
+    },
+  };
+}
+
+function linearAxis(opts={}) {
+  return Object.assign({
+    ticks:  { color: chartTextColor() },
+    grid:   { color: chartGridColor() },
+  }, opts);
+}
+
+// ── Utility: safe chart creation ──────────────────────────────────────────
+function mkChart(id, config) {
+  const el = document.getElementById(id);
+  if (!el) { console.warn('canvas not found:', id); return null; }
+  try { return new Chart(el, config); }
+  catch(e) { console.error('chart error', id, e); return null; }
+}
+
+// ── 1. Sentiment Donut ────────────────────────────────────────────────────
+mkChart('sentimentDonut', {
+  type: 'doughnut',
   data: {
-    labels: ["Positive", "Negative", "Neutral"],
-    datasets: [{ data: [sentData.positive, sentData.negative, sentData.neutral],
-      backgroundColor: [COLORS.pos, COLORS.neg, COLORS.neu], borderWidth: 2 }]
+    labels:   ['Positive', 'Negative', 'Neutral'],
+    datasets: [{
+      data:            [sentData.positive, sentData.negative, sentData.neutral],
+      backgroundColor: [C.pos, C.neg, C.neu],
+      borderWidth: 2,
+      borderColor: chartBgColor(),
+    }],
   },
-  options: { plugins: { legend: { position: "bottom" } }, cutout: "65%" }
+  options: {
+    cutout: '65%',
+    plugins: { legend: legendOpts('bottom') },
+  },
 });
 
-// ── Language Chart ────────────────────────────────────────────────────────
-new Chart(document.getElementById("langChart"), {
-  type: "doughnut",
+// ── 2. Language Doughnut ──────────────────────────────────────────────────
+mkChart('langChart', {
+  type: 'doughnut',
   data: {
-    labels: ["English", "Swahili", "Other"],
-    datasets: [{ data: [langData.en, langData.sw, langData.other],
-      backgroundColor: [COLORS.blue, COLORS.purple, COLORS.neu], borderWidth: 2 }]
+    labels:   ['English', 'Swahili', 'Other'],
+    datasets: [{
+      data:            [langData.en, langData.sw, langData.other],
+      backgroundColor: [C.blue, C.purple, C.neu],
+      borderWidth: 2,
+      borderColor: chartBgColor(),
+    }],
   },
-  options: { plugins: { legend: { position: "bottom" } }, cutout: "65%" }
+  options: {
+    cutout: '65%',
+    plugins: { legend: legendOpts('bottom') },
+  },
 });
 
-// ── Timeline ──────────────────────────────────────────────────────────────
+// ── 3. Sentiment Timeline ─────────────────────────────────────────────────
 if (timeline.length) {
-  new Chart(document.getElementById("timelineChart"), {
-    type: "line",
+  mkChart('timelineChart', {
+    type: 'line',
     data: {
       labels: timeline.map(t => t.day),
       datasets: [
-        { label:"Positive", data: timeline.map(t => t.pos),
-          borderColor: COLORS.pos, backgroundColor: COLORS.pos + "22",
-          fill: true, tension: 0.3, pointRadius: 2 },
-        { label:"Negative", data: timeline.map(t => t.neg),
-          borderColor: COLORS.neg, backgroundColor: COLORS.neg + "22",
-          fill: true, tension: 0.3, pointRadius: 2 },
-      ]
+        {
+          label: 'Positive',
+          data:  timeline.map(t => t.pos),
+          borderColor:     C.pos,
+          backgroundColor: C.pos + '22',
+          fill: true, tension: 0.3, pointRadius: 2,
+        },
+        {
+          label: 'Negative',
+          data:  timeline.map(t => t.neg),
+          borderColor:     C.neg,
+          backgroundColor: C.neg + '22',
+          fill: true, tension: 0.3, pointRadius: 2,
+        },
+      ],
     },
-    options: { scales: { y: { beginAtZero: true } },
-               plugins: { legend: { position: "bottom" } } }
+    options: {
+      scales: {
+        x: linearAxis(),
+        y: linearAxis({ beginAtZero: true }),
+      },
+      plugins: { legend: legendOpts('bottom') },
+    },
   });
+} else {
+  document.getElementById('timelineChart').parentElement.insertAdjacentHTML(
+    'beforeend',
+    '<p style="color:var(--color-text-secondary,#888);font-size:13px;text-align:center">No timeline data yet — process some reviews first.</p>'
+  );
 }
 
-// ── Top Topics ────────────────────────────────────────────────────────────
+// ── 4. Top Topics (horizontal bar) ───────────────────────────────────────
 if (topTopics.length) {
-  new Chart(document.getElementById("topicsChart"), {
-    type: "bar",
+  mkChart('topicsChart', {
+    type: 'bar',
     data: {
       labels: topTopics.map(t => t.label),
       datasets: [{
-        label: "home",
-        data: topTopics.map(t => t.count),
+        label: 'Reviews',
+        data:  topTopics.map(t => t.count),
         backgroundColor: topTopics.map(t =>
-          t.sent >= 0.65 ? COLORS.pos + "cc" :
-          t.sent <= 0.40 ? COLORS.neg + "cc" : COLORS.amber + "cc"
+          t.sent >= 0.65 ? C.pos + 'cc' :
+          t.sent <= 0.40 ? C.neg + 'cc' : C.amber + 'cc'
         ),
-      }]
+        borderRadius: 4,
+      }],
     },
-    options: { indexAxis: "y", plugins: { legend: { display: false } },
-               scales: { x: { beginAtZero: true } } }
+    options: {
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.raw} reviews`,
+          },
+        },
+      },
+      scales: {
+        x: linearAxis({ beginAtZero: true }),
+        y: linearAxis(),
+      },
+    },
   });
+} else {
+  document.getElementById('topicsChart').parentElement.insertAdjacentHTML(
+    'beforeend',
+    '<p style="color:var(--color-text-secondary,#888);font-size:13px;text-align:center">No topic data yet.</p>'
+  );
 }
 
-// ── Aspect Scores ─────────────────────────────────────────────────────────
+// ── 5. Aspect Radar ───────────────────────────────────────────────────────
 const aspectKeys = Object.keys(aspectAvgs);
 if (aspectKeys.length) {
-  new Chart(document.getElementById("aspectChart"), {
-    type: "radar",
+  mkChart('aspectChart', {
+    type: 'radar',
     data: {
       labels: aspectKeys.map(k => k.charAt(0).toUpperCase() + k.slice(1)),
       datasets: [{
-        label: "Score (%)",
-        data: aspectKeys.map(k => aspectAvgs[k]),
-        backgroundColor: COLORS.blue + "33",
-        borderColor: COLORS.blue,
-        pointBackgroundColor: COLORS.blue,
-      }]
+        label: 'Score (%)',
+        data:  aspectKeys.map(k => aspectAvgs[k]),
+        backgroundColor: C.blue + '33',
+        borderColor:     C.blue,
+        pointBackgroundColor: C.blue,
+        pointBorderColor:     chartBgColor(),
+      }],
     },
     options: {
-      scales: { r: { min: 0, max: 100, ticks: { stepSize: 25 } } },
-      plugins: { legend: { display: false } }
-    }
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks:       { color: chartTextColor(), stepSize: 25, backdropColor: 'transparent' },
+          grid:        { color: chartGridColor() },
+          angleLines:  { color: chartGridColor() },
+          pointLabels: { color: chartTextColor(), font: { size: 12 } },
+        },
+      },
+      plugins: { legend: { display: false } },
+    },
   });
+} else {
+  document.getElementById('aspectChart').parentElement.insertAdjacentHTML(
+    'beforeend',
+    '<p style="color:var(--color-text-secondary,#888);font-size:13px;text-align:center">No aspect data yet.</p>'
+  );
 }
 
-// ── Problem Properties ────────────────────────────────────────────────────
+// ── 6. Problem Properties (horizontal bar) ───────────────────────────────
 if (problemProps.length) {
-  new Chart(document.getElementById("problemProps"), {
-    type: "bar",
+  mkChart('problemProps', {
+    type: 'bar',
     data: {
       labels: problemProps.map(p => p.name),
       datasets: [{
-        label: "Negative home",
-        data: problemProps.map(p => p.neg),
-        backgroundColor: COLORS.neg + "cc",
-      }]
+        label: 'Negative Reviews',
+        data:  problemProps.map(p => p.neg),
+        backgroundColor: C.neg + 'cc',
+        borderRadius: 4,
+      }],
     },
-    options: { indexAxis: "y", plugins: { legend: { display: false } },
-               scales: { x: { beginAtZero: true } } }
+    options: {
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: linearAxis({ beginAtZero: true }),
+        y: linearAxis(),
+      },
+    },
   });
+} else {
+  document.getElementById('problemProps').parentElement.insertAdjacentHTML(
+    'beforeend',
+    '<p style="color:var(--color-text-secondary,#888);font-size:13px;text-align:center">No problem properties data yet.</p>'
+  );
 }
 </script>
 {% endblock %}
