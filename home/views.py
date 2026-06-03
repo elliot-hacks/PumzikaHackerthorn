@@ -242,7 +242,7 @@ def chat_api(request):
 
     try:
         # Use the LLM service to process the query
-        from home.llm_service import LLMService
+        from home.llm_service import GroqLLMService as LLMService
         from home.nlp import NLPQueryEngine
         
         llm = LLMService()

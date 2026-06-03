@@ -401,14 +401,16 @@ class AfriSentiAnalyzer:
                 state_dict = load_file(self.model_path)
                 num_keys = len(state_dict)
                 
-                # A complete BERT model should have 200+ keys
+                # A complete BERT/XLM-R model should have 200+ keys
                 # If we only have a few keys (like just classifier weights), the model is incomplete
                 if num_keys < 50:
                     logger.warning(
                         f"AfriSenti model file is incomplete (only {num_keys} keys). "
-                        "A complete BERT model should have 200+ keys. "
-                        "The model needs to be properly exported or downloaded."
+                        "A complete model should have 200+ keys. "
+                        "Falling back to lexicon-based analysis."
                     )
+                    # Mark tokenizer as loaded but model as unavailable
+                    # The lexicon fallback will be used
                     return False
                 
                 # Load model config
@@ -922,8 +924,8 @@ class NLPQueryEngine:
     """
 
     def __init__(self):
-        from home.llm_service import LLMService
-        self.llm = LLMService()
+        from home.llm_service import GroqLLMService
+        self.llm = GroqLLMService()
 
     def process_query(self, query: str, history: list = None) -> dict:
         """
@@ -945,27 +947,47 @@ class NLPQueryEngine:
         return self._detect_intent_by_keywords(query_lower)
 
     def _detect_intent_with_llm(self, query: str) -> Optional[str]:
-        """Use LLM to detect query intent for better multilingual support."""
+        """Use LLM to detect query intent for better multilingual support.
+        
+        Handles both English and Swahili queries by translating Swahili to English
+        internally before determining intent.
+        """
         try:
+            # First, detect if the query is in Swahili and translate key terms
+            translated_query = self._translate_swahili_query(query)
+            
             prompt = f"""You are a hotel review analytics assistant. Analyze this query and return ONLY a JSON object with the intent.
 
 Query: "{query}"
+(English translation if Swahili: "{translated_query}")
 
 Return JSON only (no markdown):
 {{"intent": "best" or "worst" or "cleanliness" or "staff" or "location" or "value" or "wifi" or "noise" or "food" or "complaints" or "general"}}
 
-The query may be in English or Swahili. Map to these intents:
-- "best" = best/top hotels (Swahili: bora, nzuri, vizuri)
-- "worst" = worst/bad hotels (Swahili: mbaya, chafu, vibaya)
-- "cleanliness" = cleanliness/hygiene (Swahili: usafi, safi)
-- "staff" = staff/service (Swahili: wafanyakazi, huduma)
-- "location" = location/area (Swahili: eneo, mahali)
-- "value" = value/price (Swahili: bei, gharama)
-- "wifi" = wifi/internet (Swahili: intaneti, mtandao)
-- "noise" = noise/quiet (Swahili: kelele, utulivu)
-- "food" = food/breakfast (Swahili: chakula)
-- "complaints" = complaints/negative (Swahili: malalamiko)
-- "general" = anything else"""
+Map the query to one of these intents based on what the user is asking about:
+- "best" = asking for best/top-rated hotels
+- "worst" = asking for worst/bad hotels  
+- "cleanliness" = asking about cleanliness, hygiene, dirty rooms
+- "staff" = asking about staff, service, reception
+- "location" = asking about location, area, accessibility
+- "value" = asking about price, value for money, expensive/cheap
+- "wifi" = asking about internet, wifi, connectivity
+- "noise" = asking about noise levels, quiet, disturbances
+- "food" = asking about food, breakfast, restaurant
+- "complaints" = asking about common complaints, negative feedback
+- "general" = general question or greeting
+
+The query may be in English or Swahili. Key Swahili terms:
+- Best: bora, nzuri, vizuri, safi, poa
+- Worst: mbaya, chafu, vibaya, duni
+- Cleanliness: usafi, safi, chafu, uchafu
+- Staff: wafanyakazi, huduma, karibu
+- Location: eneo, mahali, mkabla
+- Value: bei, gharama, pesa, ghali, rahisi
+- Wifi: intaneti, mtandao, muunganisho
+- Noise: kelele, utulivu, sauti
+- Food: chakula, kiamshakinywa, chai, meals
+- Complaints: malalamiko, shida, tatizo"""
 
             from home.llm_service import _llm_service
             result_str = _llm_service._call_with_failover(
@@ -977,6 +999,64 @@ The query may be in English or Swahili. Map to these intents:
         except Exception as e:
             logger.debug(f"LLM intent detection error: {e}")
         return None
+
+    def _translate_swahili_query(self, query: str) -> str:
+        """Translate common Swahili query terms to English for better understanding.
+        
+        This is a lightweight translation layer that maps common Swahili hospitality
+        terms to their English equivalents for query intent detection.
+        """
+        # Swahili to English translation map for hospitality queries
+        translations = {
+            # Best/worst
+            'bora': 'best', 'nzuri': 'good/best', 'vizuri': 'well/good', 
+            'safii': 'clean/best', 'poa': 'good/cool', 'duni': 'poor/worst',
+            'mbaya': 'bad/worst', 'chafu': 'dirty', 'vibaya': 'bad things',
+            
+            # Cleanliness
+            'usafi': 'cleanliness', 'safi': 'clean', 'uchafu': 'dirt/filth',
+            'chafu': 'dirty', 'mold': 'mold',
+            
+            # Staff
+            'wafanyakazi': 'staff', 'huduma': 'service', 'karibu': 'welcome/friendly',
+            'mpole': 'polite/gentle',
+            
+            # Location
+            'eneo': 'location/area', 'mahali': 'place/location', 'mkabla': 'opposite/near',
+            
+            # Value
+            'bei': 'price', 'gharama': 'cost', 'pesa': 'money', 
+            'ghali': 'expensive', 'rahisi': 'cheap/affordable',
+            
+            # Wifi
+            'intaneti': 'internet', 'mtandao': 'network', 'muunganisho': 'connection',
+            
+            # Noise
+            'kelele': 'noise', 'utulivu': 'quiet/peaceful', 'sauti': 'sound/voice',
+            
+            # Food
+            'chakula': 'food', 'kiamshakinywa': 'breakfast', 'chai': 'tea',
+            
+            # Complaints
+            'malalamiko': 'complaints', 'shida': 'problem', 'tatizo': 'problem',
+            
+            # Questions
+            'ni': 'is', 'yuko': 'is (location)', 'wako': 'are (plural)',
+            'gani': 'which/what', 'je': 'question particle',
+            'na': 'and/with', 'ya': 'of', 'kwa': 'for/at',
+        }
+        
+        query_lower = query.lower()
+        translated_parts = []
+        
+        # Replace Swahili words with English equivalents
+        for sw_word, en_word in translations.items():
+            if sw_word in query_lower:
+                translated_parts.append(f"{sw_word}={en_word}")
+        
+        if translated_parts:
+            return f"[Swahili terms: {', '.join(translated_parts)}]"
+        return query
 
     def _execute_intent(self, intent: str, query_lower: str) -> dict:
         """Execute a detected intent."""
