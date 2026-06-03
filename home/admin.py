@@ -385,9 +385,17 @@ class SentimentSnapshotAdmin(UnfoldModelAdmin):
     def changelist_view(self, request, extra_context=None):
         extra = extra_context or {}
         total_snapshots = SentimentSnapshot.objects.count()
-        # Count snapshots by positive percentage
-        pos_count = SentimentSnapshot.objects.filter(positive_pct__gte=70).count()
-        neg_count = SentimentSnapshot.objects.filter(positive_pct__lt=50).count()
+        # Count snapshots by positive count (high positivity >= 70%, low < 50%)
+        # Using positive_count relative to total_home as a proxy for percentage
+        pos_count = 0
+        neg_count = 0
+        for snap in SentimentSnapshot.objects.all():
+            if snap.total_home > 0:
+                pct = (snap.positive_count / snap.total_home) * 100
+                if pct >= 70:
+                    pos_count += 1
+                elif pct < 50:
+                    neg_count += 1
         neu_count = total_snapshots - pos_count - neg_count
         extra["module_name"] = "Sentiment Snapshots"
         extra["stats"] = {
@@ -410,7 +418,10 @@ class SentimentSnapshotAdmin(UnfoldModelAdmin):
     readonly_fields = [f.name for f in SentimentSnapshot._meta.get_fields()]
 
     def positive_pct_display(self, obj):
-        pct    = obj.positive_pct
+        if obj.total_home > 0:
+            pct = round((obj.positive_count / obj.total_home) * 100)
+        else:
+            pct = 0
         colour = "#2e7d32" if pct >= 70 else "#e65100" if pct >= 50 else "#c62828"
         return format_html(
             '<span style="color:{c};font-weight:600">{p}%</span>',

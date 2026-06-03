@@ -159,16 +159,70 @@
     color: var(--color-text-secondary, #616161);
     font-size: 13px;
   }
-  
-  /* Dark theme adjustments */
-  @media (prefers-color-scheme: dark) {
-    .doc-card {
-      background: rgba(255,255,255,0.05);
-    }
-    .model-table th {
-      background: rgba(255,255,255,0.05);
-    }
+
+  /* Unfold dark theme support */
+  html[data-theme="dark"] .doc-section,
+  [data-bs-theme="dark"] .doc-section {
+    background: #1a1a2e;
+    border-color: #2d2d44;
   }
+  
+  html[data-theme="dark"] .doc-section h2,
+  html[data-theme="dark"] .doc-section h3,
+  [data-bs-theme="dark"] .doc-section h2,
+  [data-bs-theme="dark"] .doc-section h3 {
+    color: #e0e0e0;
+  }
+  
+  html[data-theme="dark"] .doc-section p,
+  html[data-theme="dark"] .doc-section li,
+  [data-bs-theme="dark"] .doc-section p,
+  [data-bs-theme="dark"] .doc-section li {
+    color: #9e9e9e;
+  }
+  
+  html[data-theme="dark"] .doc-section h2,
+  [data-bs-theme="dark"] .doc-section h2 {
+    border-bottom-color: #2d2d44;
+  }
+  
+  html[data-theme="dark"] .doc-card,
+  [data-bs-theme="dark"] .doc-card {
+    background: #2d2d44;
+    border-color: #3d3d5c;
+  }
+  
+  html[data-theme="dark"] .doc-card h4,
+  [data-bs-theme="dark"] .doc-card h4 {
+    color: #64b5f6;
+  }
+  
+  html[data-theme="dark"] .doc-section code,
+  [data-bs-theme="dark"] .doc-section code {
+    background: #3d3d5c;
+    color: #ef9a9a;
+  }
+  
+  html[data-theme="dark"] .model-table th,
+  [data-bs-theme="dark"] .model-table th {
+    background: #2d2d44;
+    color: #e0e0e0;
+  }
+  
+  html[data-theme="dark"] .model-table td,
+  [data-bs-theme="dark"] .model-table td {
+    color: #9e9e9e;
+    border-bottom-color: #2d2d44;
+  }
+  
+  html[data-theme="dark"] .badge-blue,
+  [data-bs-theme="dark"] .badge-blue { background: #1565c0; color: #fff; }
+  html[data-theme="dark"] .badge-green,
+  [data-bs-theme="dark"] .badge-green { background: #2e7d32; color: #fff; }
+  html[data-theme="dark"] .badge-purple,
+  [data-bs-theme="dark"] .badge-purple { background: #4a148c; color: #fff; }
+  html[data-theme="dark"] .badge-amber,
+  [data-bs-theme="dark"] .badge-amber { background: #e65100; color: #fff; }
 </style>
 {% endblock %}
 
