@@ -465,8 +465,8 @@ class AfriSentiAnalyzer:
                 # AfriSenti v2 models (best for African languages including Swahili)
                 "afrisenti/afrisenti-xlm-roberta-base",
                 "afrisenti/afrisenti-base",
-                # Alternative: XLM-RoBERTa fine-tuned on Swahili sentiment
-                "nlptown/bert-base-multilingual-uncased-sentiment",
+                # Alternative: XLM-RoBERTa fine-tuned on African language sentiment
+                "cardiffnlp/twitter-xlm-roberta-base-sentiment",
             ]
             
             for model_name in model_names_to_try:

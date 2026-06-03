@@ -1,0 +1,64 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+env
+venv
+ENV
+.eggs
+*.egg-info
+*.egg
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# Data
+db.sqlite3
+*.db
+data/
+
+# Static files (will be collected)
+staticfiles/
+static/
+
+# Logs
+*.log
+debug.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Celery
+celerybeat-schedule*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Model files (large, can be downloaded)
+model.safetensors
+*.bin
+*.pt
+
+# Documentation (optional for smaller image)
+# pitchMark.md
+# README.md
